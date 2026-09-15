@@ -1,0 +1,6 @@
+{
+  "name": "The Educational Centre Secondary School - Fee Tracker",
+  "description": "Fee Management & Financial Tracking Application for The Educational Centre Secondary School (ETC) with DataTables ledger, WhatsApp reminders, and real-time financial tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
