@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { LoginModal } from './components/LoginModal';
+import { LogOut } from 'lucide-react';
 import { StudentRecord, AcademicMonth, ACADEMIC_MONTHS, PaymentStatus } from './types';
 import {
   INITIAL_STUDENTS,
@@ -41,7 +43,9 @@ const STORAGE_KEY = 'educentre_fee_register_cache';
 
 export default function App() {
   // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('educentre_auth_session') === 'true';
+  });
 
   // 1. INSTANT LOAD: Initialize state from LocalStorage first, fallback to INITIAL_STUDENTS
   const [students, setStudents] = useState<StudentRecord[]>(() => {
@@ -90,24 +94,21 @@ export default function App() {
   };
 
   // Auth Handlers
-  const handleLogin = async (pin: string) => {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin }),
-    });
-
-    if (res.ok) {
+  const handleLogin = async (pin: string): Promise<boolean> => {
+    if (pin === '1983') {
+      localStorage.setItem('educentre_auth_session', 'true');
       setIsAuthenticated(true);
-      showToast('Signed in successfully!');
-    } else {
-      showToast('Incorrect Admin PIN');
+      showToast('Authenticated successfully!');
+      return true;
     }
+    showToast('Incorrect Admin PIN');
+    return false;
   };
 
-  const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+  const handleLogout = () => {
+    localStorage.removeItem('educentre_auth_session');
     setIsAuthenticated(false);
+    showToast('Logged out of system.');
   };
 
   // Keep local storage in sync whenever state changes
@@ -457,6 +458,11 @@ export default function App() {
     showToast(`Academic Year ${newYear} successfully added!`);
   };
 
+  // AUTH GUARD: Block entire page if unauthenticated
+  if (!isAuthenticated) {
+    return <LoginModal onLogin={handleLogin} />;
+  }
+
   return (
     <div className="min-h-screen bg-neutral-100 text-neutral-900 font-sans flex flex-col">
       {/* Toast Notification */}
@@ -563,6 +569,15 @@ export default function App() {
               >
                 <Plus className="w-3.5 h-3.5" />
                 Enroll Student
+              </button>
+
+              {/* Logout Button */}
+              <button
+                onClick={handleLogout}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-rose-600/20 text-neutral-300 hover:text-rose-400 border border-neutral-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer ml-1"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Logout
               </button>
             </div>
           </div>
