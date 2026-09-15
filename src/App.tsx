@@ -5,7 +5,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { StudentRecord, AcademicMonth, ACADEMIC_MONTHS, PaymentStatus } from './types';
-import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
 import {
   INITIAL_STUDENTS,
   getEffectiveMonthlyStatus,
@@ -41,6 +40,9 @@ import {
 const STORAGE_KEY = 'educentre_fee_register_cache';
 
 export default function App() {
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+
   // 1. INSTANT LOAD: Initialize state from LocalStorage first, fallback to INITIAL_STUDENTS
   const [students, setStudents] = useState<StudentRecord[]>(() => {
     try {
@@ -59,10 +61,10 @@ export default function App() {
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('2026-2027');
   const [activeTab, setActiveTab] = useState<'summary' | 'ledger' | 'aging'>('summary');
   const [sharedActiveMonth, setSharedActiveMonth] = useState<AcademicMonth>(() => {
-  const currentMonthName = new Date().toLocaleString('en-US', { month: 'short' }) as AcademicMonth;
-  // Fallback to 'Jun' if the current month isn't in ACADEMIC_MONTHS array
-  return ACADEMIC_MONTHS.includes(currentMonthName) ? currentMonthName : 'Jun';
-  }); const [isSyncing, setIsSyncing] = useState<boolean>(false);
+    const currentMonthName = new Date().toLocaleString('en-US', { month: 'short' }) as AcademicMonth;
+    return ACADEMIC_MONTHS.includes(currentMonthName) ? currentMonthName : 'Jun';
+  });
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Mouse pan hook
   const { isPanMode, setIsPanMode, isSpaceHeld, isDragging, resetView } = useMousePan();
@@ -87,6 +89,27 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // Auth Handlers
+  const handleLogin = async (pin: string) => {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    });
+
+    if (res.ok) {
+      setIsAuthenticated(true);
+      showToast('Signed in successfully!');
+    } else {
+      showToast('Incorrect Admin PIN');
+    }
+  };
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setIsAuthenticated(false);
+  };
+
   // Keep local storage in sync whenever state changes
   useEffect(() => {
     try {
@@ -96,27 +119,6 @@ export default function App() {
     }
   }, [students]);
 
-  // Helper to persist array updates to Vercel Postgres API in background
-  // const syncStudentToBackend = async (student: StudentRecord) => {
-  //   setIsSyncing(true);
-  //   try {
-  //     await fetch('/api/update', {
-  //       method: 'POST',
-  //       headers: { 'Content-Type': 'application/json' },
-  //       body: JSON.stringify({
-  //         studentId: student.id,
-  //         updatedStudent: student,
-  //         academicYear: selectedAcademicYear,
-  //       }),
-  //     });
-  //   } catch (err) {
-  //     console.error('Failed to persist student change to backend database:', err);
-  //   } finally {
-  //     setIsSyncing(false);
-  //   }
-  // };
-
-  // Helper to persist array updates to Vercel Postgres API in background
   // 1. PERSIST SINGLE STUDENT UPDATE (POST)
   const syncStudentToBackend = async (student: StudentRecord) => {
     setIsSyncing(true);
@@ -124,7 +126,7 @@ export default function App() {
       const res = await fetch('/api/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'omit', // <-- STRIPS BULKY CLERK COOKIES FROM POST
+        credentials: 'omit',
         body: JSON.stringify({
           studentId: student.id,
           updatedStudent: student,
@@ -152,7 +154,7 @@ export default function App() {
       await fetch('/api/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'omit', // <-- STRIPS BULKY CLERK COOKIES FROM BULK POST
+        credentials: 'omit',
         body: JSON.stringify({
           students: studentList,
           academicYear: targetYear || selectedAcademicYear,
@@ -172,7 +174,7 @@ export default function App() {
       setIsSyncing(true);
       try {
         const response = await fetch(`/api/students?academicYear=${selectedAcademicYear}`, {
-          credentials: 'omit', // <-- STRIPS BULKY CLERK COOKIES FROM GET
+          credentials: 'omit',
         });
         if (response.ok) {
           const data = await response.json();
@@ -535,10 +537,11 @@ export default function App() {
               {/* Pan View Toggle */}
               <button
                 onClick={() => setIsPanMode((prev) => !prev)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer ${isPanMode || isSpaceHeld
-                  ? 'bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold ring-2 ring-amber-300 shadow-sm'
-                  : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
-                  }`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer ${
+                  isPanMode || isSpaceHeld
+                    ? 'bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold ring-2 ring-amber-300 shadow-sm'
+                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+                }`}
               >
                 <Hand className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">{isPanMode ? 'Pan: ON' : 'Pan View'}</span>
@@ -561,22 +564,6 @@ export default function App() {
                 <Plus className="w-3.5 h-3.5" />
                 Enroll Student
               </button>
-
-              {/* Clerk Authentication Controls */}
-              <SignedOut>
-                <SignInButton mode="modal">
-                  <button className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer border border-indigo-500">
-                    Sign In
-                  </button>
-                </SignInButton>
-              </SignedOut>
-
-              <SignedIn>
-                <div className="flex items-center pl-1 border-l border-neutral-700">
-                  <UserButton afterSignOutUrl="/" />
-                </div>
-              </SignedIn>
-
             </div>
           </div>
 
@@ -585,8 +572,9 @@ export default function App() {
             <div className="flex space-x-1 sm:space-x-2 overflow-x-auto">
               <button
                 onClick={() => setActiveTab('summary')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${activeTab === 'summary' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                  }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
+                  activeTab === 'summary' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
               >
                 <BarChart3 className="w-3.5 h-3.5" />
                 Monthly Summary Dashboard
@@ -594,8 +582,9 @@ export default function App() {
 
               <button
                 onClick={() => setActiveTab('ledger')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${activeTab === 'ledger' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                  }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
+                  activeTab === 'ledger' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
               >
                 <Table className="w-3.5 h-3.5" />
                 Student Fee Ledger
@@ -603,8 +592,9 @@ export default function App() {
 
               <button
                 onClick={() => setActiveTab('aging')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${activeTab === 'aging' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                  }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
+                  activeTab === 'aging' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
               >
                 <ClockAlert className="w-3.5 h-3.5" />
                 Fee Receivable Aging Report
