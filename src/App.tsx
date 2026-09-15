@@ -58,8 +58,11 @@ export default function App() {
   const [academicYears, setAcademicYears] = useState<string[]>(['2026-2027', '2025-2026']);
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('2026-2027');
   const [activeTab, setActiveTab] = useState<'summary' | 'ledger' | 'aging'>('summary');
-  const [sharedActiveMonth, setSharedActiveMonth] = useState<AcademicMonth>('Feb');
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [sharedActiveMonth, setSharedActiveMonth] = useState<AcademicMonth>(() => {
+  const currentMonthName = new Date().toLocaleString('en-US', { month: 'short' }) as AcademicMonth;
+  // Fallback to 'Jun' if the current month isn't in ACADEMIC_MONTHS array
+  return ACADEMIC_MONTHS.includes(currentMonthName) ? currentMonthName : 'Jun';
+  }); const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Mouse pan hook
   const { isPanMode, setIsPanMode, isSpaceHeld, isDragging, resetView } = useMousePan();
@@ -113,82 +116,82 @@ export default function App() {
   //   }
   // };
 
-// Helper to persist array updates to Vercel Postgres API in background
+  // Helper to persist array updates to Vercel Postgres API in background
   // 1. PERSIST SINGLE STUDENT UPDATE (POST)
-const syncStudentToBackend = async (student: StudentRecord) => {
-  setIsSyncing(true);
-  try {
-    const res = await fetch('/api/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'omit', // <-- STRIPS BULKY CLERK COOKIES FROM POST
-      body: JSON.stringify({
-        studentId: student.id,
-        updatedStudent: student,
-        academicYear: selectedAcademicYear,
-      }),
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      console.error('API Update Error:', res.status, errData);
-      showToast(`⚠️ Server save failed (${res.status}). Saved locally.`);
-    }
-  } catch (err) {
-    console.error('Failed to persist student change to backend database:', err);
-    showToast('⚠️ Network error saving to database.');
-  } finally {
-    setIsSyncing(false);
-  }
-};
-
-// 2. BULK SAVE STUDENTS (POST)
-const syncBulkStudentsToBackend = async (studentList: StudentRecord[], targetYear?: string) => {
-  setIsSyncing(true);
-  try {
-    await fetch('/api/students', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'omit', // <-- STRIPS BULKY CLERK COOKIES FROM BULK POST
-      body: JSON.stringify({
-        students: studentList,
-        academicYear: targetYear || selectedAcademicYear,
-      }),
-    });
-  } catch (err) {
-    console.error('Failed to sync bulk students with backend database:', err);
-  } finally {
-    setIsSyncing(false);
-  }
-};
-
-// 3. SILENT BACKGROUND DB FETCH (GET)
-useEffect(() => {
-  let isMounted = true;
-  async function loadDatabaseStudents() {
+  const syncStudentToBackend = async (student: StudentRecord) => {
     setIsSyncing(true);
     try {
-      const response = await fetch(`/api/students?academicYear=${selectedAcademicYear}`, {
-        credentials: 'omit', // <-- STRIPS BULKY CLERK COOKIES FROM GET
+      const res = await fetch('/api/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'omit', // <-- STRIPS BULKY CLERK COOKIES FROM POST
+        body: JSON.stringify({
+          studentId: student.id,
+          updatedStudent: student,
+          academicYear: selectedAcademicYear,
+        }),
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (isMounted && Array.isArray(data) && data.length > 0) {
-          setStudents(data);
-        }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error('API Update Error:', res.status, errData);
+        showToast(`⚠️ Server save failed (${res.status}). Saved locally.`);
       }
     } catch (err) {
-      console.warn('Backend database fetch unavailable, using local state:', err);
+      console.error('Failed to persist student change to backend database:', err);
+      showToast('⚠️ Network error saving to database.');
     } finally {
-      if (isMounted) setIsSyncing(false);
+      setIsSyncing(false);
     }
-  }
-
-  loadDatabaseStudents();
-  return () => {
-    isMounted = false;
   };
-}, [selectedAcademicYear]);
+
+  // 2. BULK SAVE STUDENTS (POST)
+  const syncBulkStudentsToBackend = async (studentList: StudentRecord[], targetYear?: string) => {
+    setIsSyncing(true);
+    try {
+      await fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'omit', // <-- STRIPS BULKY CLERK COOKIES FROM BULK POST
+        body: JSON.stringify({
+          students: studentList,
+          academicYear: targetYear || selectedAcademicYear,
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to sync bulk students with backend database:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // 3. SILENT BACKGROUND DB FETCH (GET)
+  useEffect(() => {
+    let isMounted = true;
+    async function loadDatabaseStudents() {
+      setIsSyncing(true);
+      try {
+        const response = await fetch(`/api/students?academicYear=${selectedAcademicYear}`, {
+          credentials: 'omit', // <-- STRIPS BULKY CLERK COOKIES FROM GET
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (isMounted && Array.isArray(data) && data.length > 0) {
+            setStudents(data);
+          }
+        }
+      } catch (err) {
+        console.warn('Backend database fetch unavailable, using local state:', err);
+      } finally {
+        if (isMounted) setIsSyncing(false);
+      }
+    }
+
+    loadDatabaseStudents();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedAcademicYear]);
 
   // Compute session totals
   const activeMonthIndex = ACADEMIC_MONTHS.indexOf(sharedActiveMonth);
@@ -533,8 +536,8 @@ useEffect(() => {
               <button
                 onClick={() => setIsPanMode((prev) => !prev)}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer ${isPanMode || isSpaceHeld
-                    ? 'bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold ring-2 ring-amber-300 shadow-sm'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+                  ? 'bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold ring-2 ring-amber-300 shadow-sm'
+                  : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
                   }`}
               >
                 <Hand className="w-3.5 h-3.5" />
