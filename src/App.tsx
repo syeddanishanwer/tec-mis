@@ -57,7 +57,7 @@ export default function App() {
 
   const [academicYears, setAcademicYears] = useState<string[]>(['2026-2027', '2025-2026']);
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('2026-2027');
-  const [activeTab, setActiveTab] = useState<'summary' | 'ledger' | 'aging'>('ledger');
+  const [activeTab, setActiveTab] = useState<'summary' | 'ledger' | 'aging'>('summary');
   const [sharedActiveMonth, setSharedActiveMonth] = useState<AcademicMonth>('Feb');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
