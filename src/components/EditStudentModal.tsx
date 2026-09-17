@@ -33,6 +33,7 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
     const res = await fetch('/api/fees/schedule', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({
         studentId: student.id,
         baseAmount: Math.max(0, Number(newFeeAmount)),

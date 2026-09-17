@@ -43,9 +43,8 @@ const STORAGE_KEY = 'educentre_fee_register_cache';
 
 export default function App() {
   // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('educentre_auth_session') === 'true';
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authChecked, setAuthChecked] = useState<boolean>(false);
 
   // 1. INSTANT LOAD: Initialize state from LocalStorage first, fallback to INITIAL_STUDENTS
   const [students, setStudents] = useState<StudentRecord[]>(() => {
@@ -95,21 +94,58 @@ export default function App() {
 
   // Auth Handlers
   const handleLogin = async (pin: string): Promise<boolean> => {
-    if (pin === '1983') {
-      localStorage.setItem('educentre_auth_session', 'true');
-      setIsAuthenticated(true);
-      showToast('Authenticated successfully!');
-      return true;
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ pin }),
+      });
+
+      if (res.ok) {
+        setIsAuthenticated(true);
+        showToast('Authenticated successfully!');
+        return true;
+      }
+
+      showToast('Incorrect Admin PIN');
+      return false;
+    } catch (err) {
+      console.error('Login request failed:', err);
+      showToast('⚠️ Login request failed. Check your connection.');
+      return false;
     }
-    showToast('Incorrect Admin PIN');
-    return false;
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('educentre_auth_session');
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch (err) {
+      console.error('Logout request failed:', err);
+    }
     setIsAuthenticated(false);
     showToast('Logged out of system.');
   };
+
+
+  // Verify session with the server on initial load (HttpOnly cookie can't be read directly)
+  useEffect(() => {
+    let isMounted = true;
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/auth/verify', { credentials: 'include' });
+        if (isMounted) setIsAuthenticated(res.ok);
+      } catch {
+        if (isMounted) setIsAuthenticated(false);
+      } finally {
+        if (isMounted) setAuthChecked(true);
+      }
+    }
+    checkAuth();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Keep local storage in sync whenever state changes
   useEffect(() => {
@@ -127,7 +163,7 @@ export default function App() {
       const res = await fetch('/api/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'omit',
+        credentials: 'include',
         body: JSON.stringify({
           studentId: student.id,
           updatedStudent: student,
@@ -155,7 +191,7 @@ export default function App() {
       await fetch('/api/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'omit',
+        credentials: 'include',
         body: JSON.stringify({
           students: studentList,
           academicYear: targetYear || selectedAcademicYear,
@@ -175,7 +211,7 @@ export default function App() {
       setIsSyncing(true);
       try {
         const response = await fetch(`/api/students?academicYear=${selectedAcademicYear}`, {
-          credentials: 'omit',
+          credentials: 'include',
         });
         if (response.ok) {
           const data = await response.json();
@@ -458,9 +494,13 @@ export default function App() {
     showToast(`Academic Year ${newYear} successfully added!`);
   };
 
-  // AUTH GUARD: Block entire page if unauthenticated
-  if (!isAuthenticated) {
-    return <LoginModal onLogin={handleLogin} />;
+  // AUTH GUARD: Wait for server verification before deciding what to render
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-neutral-100 flex items-center justify-center">
+        <p className="text-sm text-neutral-500">Verifying session...</p>
+      </div>
+    );
   }
 
   return (
@@ -543,11 +583,10 @@ export default function App() {
               {/* Pan View Toggle */}
               <button
                 onClick={() => setIsPanMode((prev) => !prev)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer ${
-                  isPanMode || isSpaceHeld
-                    ? 'bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold ring-2 ring-amber-300 shadow-sm'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
-                }`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer ${isPanMode || isSpaceHeld
+                  ? 'bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold ring-2 ring-amber-300 shadow-sm'
+                  : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+                  }`}
               >
                 <Hand className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">{isPanMode ? 'Pan: ON' : 'Pan View'}</span>
@@ -587,9 +626,8 @@ export default function App() {
             <div className="flex space-x-1 sm:space-x-2 overflow-x-auto">
               <button
                 onClick={() => setActiveTab('summary')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
-                  activeTab === 'summary' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${activeTab === 'summary' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
               >
                 <BarChart3 className="w-3.5 h-3.5" />
                 Monthly Summary Dashboard
@@ -597,9 +635,8 @@ export default function App() {
 
               <button
                 onClick={() => setActiveTab('ledger')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
-                  activeTab === 'ledger' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${activeTab === 'ledger' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
               >
                 <Table className="w-3.5 h-3.5" />
                 Student Fee Ledger
@@ -607,9 +644,8 @@ export default function App() {
 
               <button
                 onClick={() => setActiveTab('aging')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
-                  activeTab === 'aging' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${activeTab === 'aging' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
               >
                 <ClockAlert className="w-3.5 h-3.5" />
                 Fee Receivable Aging Report
