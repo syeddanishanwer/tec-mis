@@ -494,13 +494,17 @@ export default function App() {
     showToast(`Academic Year ${newYear} successfully added!`);
   };
 
-  // AUTH GUARD: Wait for server verification before deciding what to render
+ // AUTH GUARD: Wait for server verification before deciding what to render
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-neutral-100 flex items-center justify-center">
         <p className="text-sm text-neutral-500">Verifying session...</p>
       </div>
     );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginModal onLogin={handleLogin} />;
   }
 
   return (
