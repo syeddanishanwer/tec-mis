@@ -19,9 +19,50 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
   const [discount, setDiscount] = useState<number>(student.discount || 0);
   const [rollNo, setRollNo] = useState<string>(student.rollNo);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // New: fee-schedule fields (drive student_fee_schedules via /api/fees/schedule)
+  const [newFeeAmount, setNewFeeAmount] = useState<number>(student.monthlyFee);
+  const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [isSaving, setIsSaving] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+
+  const handleFeeScheduleUpdate = async () => {
+    // Only call the endpoint if the fee actually changed - avoids creating
+    // no-op schedule rows every time the modal is saved for unrelated edits.
+    if (Number(newFeeAmount) === Number(student.monthlyFee)) return;
+
+    const res = await fetch('/api/fees/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentId: student.id,
+        baseAmount: Math.max(0, Number(newFeeAmount)),
+        concession: Math.max(0, Number(discount)),
+        effectiveFrom,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to save fee schedule');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!studentName.trim() || !fatherName.trim()) return;
+
+    setScheduleError(null);
+    setIsSaving(true);
+
+    try {
+      // Record the fee change (if any) in student_fee_schedules first.
+      await handleFeeScheduleUpdate();
+    } catch (err: any) {
+      console.error('Fee schedule update failed:', err);
+      setScheduleError(err.message || 'Could not save the new fee schedule. Please try again.');
+      setIsSaving(false);
+      return; // Don't proceed with the rest of the save if the schedule write failed
+    }
 
     // Standardize serial number if numeric (e.g. '1' -> '001', '02' -> '002')
     let cleanSerial = serialNo.trim();
@@ -41,6 +82,7 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
       rollNo: rollNo.trim(),
     });
 
+    setIsSaving(false);
     onClose();
   };
 
@@ -168,20 +210,29 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
             </p>
           </div>
 
-          {/* M. FEE and Concession */}
+          {/* New Fee + Effective From (writes to student_fee_schedules) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                M. FEE (Monthly Fee in PKR) *
+                New Monthly Fee (PKR) *
               </label>
               <input
                 type="number"
                 min="0"
                 step="50"
-                value={monthlyFee}
-                onChange={(e) => setMonthlyFee(Number(e.target.value))}
+                value={newFeeAmount}
+                onChange={(e) => setNewFeeAmount(Number(e.target.value))}
                 className="w-full text-sm font-semibold border border-neutral-300 rounded-lg p-2.5 focus:ring-2 focus:ring-neutral-900 focus:outline-none"
                 required
+              />
+              <label className="block text-[11px] font-semibold text-neutral-500 mt-2 mb-1">
+                Effective From
+              </label>
+              <input
+                type="date"
+                value={effectiveFrom}
+                onChange={(e) => setEffectiveFrom(e.target.value)}
+                className="w-full text-xs border border-neutral-300 rounded-lg p-2 focus:ring-2 focus:ring-neutral-900 focus:outline-none"
               />
             </div>
             <div>
@@ -202,9 +253,15 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
           <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200 text-xs flex justify-between items-center">
             <span className="text-neutral-500">Effective Monthly Payable:</span>
             <span className="font-bold text-neutral-900 text-sm">
-              Rs. {Math.max(0, monthlyFee - discount).toLocaleString()}
+              Rs. {Math.max(0, newFeeAmount - discount).toLocaleString()}
             </span>
           </div>
+
+          {scheduleError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg p-2.5">
+              {scheduleError}
+            </div>
+          )}
 
           {/* Footer Actions */}
           <div className="pt-3 flex justify-end gap-2 border-t border-neutral-200">
@@ -217,10 +274,11 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 shadow-xs transition-colors"
+              disabled={isSaving}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 shadow-xs transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <UserCheck className="w-3.5 h-3.5" />
-              Save Student Changes
+              {isSaving ? 'Saving...' : 'Save Student Changes'}
             </button>
           </div>
         </form>
