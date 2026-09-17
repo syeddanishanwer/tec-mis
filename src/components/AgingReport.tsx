@@ -1,16 +1,66 @@
-import React, { useState } from 'react';
-import { StudentRecord, AcademicMonth, ACADEMIC_MONTHS, AgingBucketSummary } from '../types';
-import { calculateStudentTotals, formatPhoneDisplay, formatSerialNo } from '../data/mockStudents';
+import React, { useState, useMemo, useEffect } from 'react';
+import { StudentRecord, AcademicMonth, ACADEMIC_MONTHS, Invoice } from '../types';
+import { formatPhoneDisplay, formatSerialNo } from '../data/mockStudents';
 import {
   Clock,
   AlertTriangle,
   Flame,
   Phone,
   CheckCircle2,
-  ExternalLink,
   ChevronRight,
-  ShieldAlert,
 } from 'lucide-react';
+
+// Custom Hook to fetch Invoices from API
+export const useInvoices = (year?: string) => {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      setLoading(true);
+      try {
+        const startYear = year ? year.split('-')[0] : undefined;
+        const url = startYear ? `/api/invoices?year=${startYear}` : '/api/invoices';
+        const res = await fetch(url);
+        const data = await res.json();
+        setInvoices(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Error fetching invoices:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInvoices();
+  }, [year]);
+
+  return { invoices, loading };
+};
+
+// Helper to convert AcademicMonth into YYYY-MM-01 ISO date string
+const getMonthYearString = (month: AcademicMonth, academicYear: string): string => {
+  const [startYearStr] = academicYear.split('-');
+  const startYear = parseInt(startYearStr, 10) || 2026;
+  const endYear = startYear + 1;
+
+  const monthMap: Record<AcademicMonth, { monthNum: string; year: number }> = {
+    Jun: { monthNum: '06', year: startYear },
+    Jul: { monthNum: '07', year: startYear },
+    Aug: { monthNum: '08', year: startYear },
+    Sep: { monthNum: '09', year: startYear },
+    Oct: { monthNum: '10', year: startYear },
+    Nov: { monthNum: '11', year: startYear },
+    Dec: { monthNum: '12', year: startYear },
+    Jan: { monthNum: '01', year: endYear },
+    Feb: { monthNum: '02', year: endYear },
+    Mar: { monthNum: '03', year: endYear },
+    Apr: { monthNum: '04', year: endYear },
+    May: { monthNum: '05', year: endYear },
+  };
+
+  const target = monthMap[month] || { monthNum: '01', year: startYear };
+  return `${target.year}-${target.monthNum}-01`;
+};
 
 interface Props {
   students: StudentRecord[];
@@ -29,40 +79,82 @@ export const AgingReport: React.FC<Props> = ({
 }) => {
   const [selectedBucket, setSelectedBucket] = useState<'all' | '30' | '60' | '90'>('all');
 
+  // Fetch Invoices from API
+  const { invoices } = useInvoices(activeAcademicYear);
+
+  // Quick lookup map: studentId_YYYY-MM-01 -> Invoice
+  const invoiceMap = useMemo(() => {
+    const map = new Map<string, Invoice>();
+    invoices.forEach((inv) => {
+      const formattedMonth = inv.month_year.slice(0, 10);
+      map.set(`${inv.student_id}_${formattedMonth}`, inv);
+    });
+    return map;
+  }, [invoices]);
+
   const activeMonthIndex = ACADEMIC_MONTHS.indexOf(activeMonth);
+  const visibleMonths = ACADEMIC_MONTHS.slice(0, activeMonthIndex + 1);
 
-  // Categorize students into 30 Days, 60 Days, 90+ Days buckets up to activeMonth
-  const evaluated = students.map((s) => {
-    const totals = calculateStudentTotals(s, activeMonthIndex, activeAcademicYear);
-    return {
-      student: s,
-      totals,
-    };
-  });
+  // Categorize students into 30 Days, 60 Days, 90+ Days buckets up to activeMonth using DB invoices
+  const evaluated = useMemo(() => {
+    return students.map((s) => {
+      let totalCollected = 0;
+      let totalDue = 0;
+      let overdueMonthsCount = 0;
 
-  const bucket30Items = evaluated.filter((e) => e.totals.overdueMonthsCount === 1);
-  const bucket60Items = evaluated.filter((e) => e.totals.overdueMonthsCount === 2);
-  const bucket90Items = evaluated.filter((e) => e.totals.overdueMonthsCount >= 3);
-  const currentCleared = evaluated.filter((e) => e.totals.overdueMonthsCount === 0);
+      visibleMonths.forEach((m) => {
+        const dateStr = getMonthYearString(m, activeAcademicYear);
+        const inv = invoiceMap.get(`${s.id}_${dateStr}`);
 
-  const amount30 = bucket30Items.reduce((acc, curr) => acc + curr.totals.totalDue, 0);
-  const amount60 = bucket60Items.reduce((acc, curr) => acc + curr.totals.totalDue, 0);
-  const amount90 = bucket90Items.reduce((acc, curr) => acc + curr.totals.totalDue, 0);
+        if (inv) {
+          const paid = Number(inv.paid_amount) || 0;
+          const dueAmt = Math.max(0, Number(inv.net_due) - paid);
+          totalCollected += paid;
+          totalDue += dueAmt;
+          if (dueAmt > 0) overdueMonthsCount++;
+        } else {
+          const netFee = Math.max(0, (s.monthlyFee || 0) - (s.discount || 0));
+          const paid = s.monthlyAmountsPaid?.[m] || 0;
+          const dueAmt = Math.max(0, netFee - paid);
+          totalCollected += paid;
+          totalDue += dueAmt;
+          if (dueAmt > 0) overdueMonthsCount++;
+        }
+      });
+
+      return {
+        student: s,
+        totals: {
+          totalCollected,
+          totalDue,
+          overdueMonthsCount,
+        },
+      };
+    });
+  }, [students, visibleMonths, activeAcademicYear, invoiceMap]);
+
+  const bucket30Items = useMemo(() => evaluated.filter((e) => e.totals.overdueMonthsCount === 1), [evaluated]);
+  const bucket60Items = useMemo(() => evaluated.filter((e) => e.totals.overdueMonthsCount === 2), [evaluated]);
+  const bucket90Items = useMemo(() => evaluated.filter((e) => e.totals.overdueMonthsCount >= 3), [evaluated]);
+
+  const amount30 = useMemo(() => bucket30Items.reduce((acc, curr) => acc + curr.totals.totalDue, 0), [bucket30Items]);
+  const amount60 = useMemo(() => bucket60Items.reduce((acc, curr) => acc + curr.totals.totalDue, 0), [bucket60Items]);
+  const amount90 = useMemo(() => bucket90Items.reduce((acc, curr) => acc + curr.totals.totalDue, 0), [bucket90Items]);
   const totalOverdue = amount30 + amount60 + amount90;
-  const totalCollectedAll = evaluated.reduce((acc, curr) => acc + curr.totals.totalCollected, 0);
+  const totalCollectedAll = useMemo(() => evaluated.reduce((acc, curr) => acc + curr.totals.totalCollected, 0), [evaluated]);
 
   // Filter list based on selected view
-  let displayedItems = evaluated.filter((e) => e.totals.overdueMonthsCount > 0);
-  if (selectedBucket === '30') {
-    displayedItems = bucket30Items;
-  } else if (selectedBucket === '60') {
-    displayedItems = bucket60Items;
-  } else if (selectedBucket === '90') {
-    displayedItems = bucket90Items;
-  }
-
-  // Sort displayed items by outstanding descending
-  displayedItems.sort((a, b) => b.totals.totalDue - a.totals.totalDue);
+  let displayedItems = useMemo(() => {
+    let items = evaluated.filter((e) => e.totals.overdueMonthsCount > 0);
+    if (selectedBucket === '30') {
+      items = bucket30Items;
+    } else if (selectedBucket === '60') {
+      items = bucket60Items;
+    } else if (selectedBucket === '90') {
+      items = bucket90Items;
+    }
+    return [...items].sort((a, b) => b.totals.totalDue - a.totals.totalDue);
+  }, [evaluated, selectedBucket, bucket30Items, bucket60Items, bucket90Items]);
 
   return (
     <div className="space-y-6">

@@ -16,6 +16,31 @@ interface Props {
   ) => void;
 }
 
+// Helper to convert short academic month string into standard YYYY-MM-01 ISO date
+const getMonthYearDateString = (month: AcademicMonth, academicYear: string): string => {
+  const [startYearStr, endYearStr] = academicYear.split('-');
+  const startYear = parseInt(startYearStr, 10);
+  const endYear = parseInt(endYearStr, 10) || startYear + 1;
+
+  const monthMap: Record<AcademicMonth, { monthNum: string; year: number }> = {
+    Jun: { monthNum: '06', year: startYear },
+    Jul: { monthNum: '07', year: startYear },
+    Aug: { monthNum: '08', year: startYear },
+    Sep: { monthNum: '09', year: startYear },
+    Oct: { monthNum: '10', year: startYear },
+    Nov: { monthNum: '11', year: startYear },
+    Dec: { monthNum: '12', year: startYear },
+    Jan: { monthNum: '01', year: endYear },
+    Feb: { monthNum: '02', year: endYear },
+    Mar: { monthNum: '03', year: endYear },
+    Apr: { monthNum: '04', year: endYear },
+    May: { monthNum: '05', year: endYear },
+  };
+
+  const target = monthMap[month] || { monthNum: '01', year: startYear };
+  return `${target.year}-${target.monthNum}-01`;
+};
+
 export const RecordPaymentModal: React.FC<Props> = ({
   student,
   activeAcademicYear = '2026-2027',
@@ -26,14 +51,48 @@ export const RecordPaymentModal: React.FC<Props> = ({
   const [amount, setAmount] = useState<number>(student.monthlyFee - student.discount);
   const [status, setStatus] = useState<PaymentStatus>('paid');
   const [method, setMethod] = useState<'Cash' | 'Bank Transfer' | 'Online/EasyPaisa/JazzCash'>('Cash');
-  const [receiptNo] = useState<string>(
-    'REC-' + Math.floor(100000 + Math.random() * 900000)
-  );
+  const [receiptNo] = useState<string>('REC-' + Math.floor(100000 + Math.random() * 900000));
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handlePaymentSubmit = async (studentId: number, monthYear: string, paidAmount: number) => {
+    const res = await fetch('/api/fees/record-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentId,
+        monthYear, // Format: 'YYYY-MM-01'
+        paidAmount,
+      }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to record payment');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSavePayment(student.id, selectedMonth, amount, status, method, receiptNo);
-    onClose();
+    setErrorMessage(null);
+    setIsSubmitting(true);
+
+    try {
+      const monthYearDate = getMonthYearDateString(selectedMonth, activeAcademicYear);
+      
+      // Post payment record to database endpoint
+      await handlePaymentSubmit(student.id, monthYearDate, amount);
+
+      // Trigger local application state update
+      onSavePayment(student.id, selectedMonth, amount, status, method, receiptNo);
+      onClose();
+    } catch (err: any) {
+      console.error('Error recording payment:', err);
+      setErrorMessage(err.message || 'Error recording payment to server. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -90,7 +149,7 @@ export const RecordPaymentModal: React.FC<Props> = ({
             >
               {ACADEMIC_MONTHS.map((m) => (
                 <option key={m} value={m}>
-                  {m} (Current Status: {student.monthlyStatus[m].toUpperCase()})
+                  {m} (Current Status: {(student.monthlyStatus?.[m] || 'pending').toUpperCase()})
                 </option>
               ))}
             </select>
@@ -137,20 +196,28 @@ export const RecordPaymentModal: React.FC<Props> = ({
             </select>
           </div>
 
+          {errorMessage && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg p-2.5">
+              {errorMessage}
+            </div>
+          )}
+
           <div className="pt-2 flex justify-end gap-2 border-t border-neutral-200">
             <button
               type="button"
               onClick={onClose}
-              className="text-xs font-semibold px-4 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
+              disabled={isSubmitting}
+              className="text-xs font-semibold px-4 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <CheckCircle2 className="w-4 h-4" />
-              Confirm & Save Payment
+              {isSubmitting ? 'Saving...' : 'Confirm & Save Payment'}
             </button>
           </div>
         </form>

@@ -15,20 +15,26 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
   const [fatherName, setFatherName] = useState<string>(student.fatherName);
   const [className, setClassName] = useState<SchoolClass>(student.className);
   const [contactNo, setContactNo] = useState<string>(student.contactNo);
-  const [monthlyFee, setMonthlyFee] = useState<number>(student.monthlyFee);
   const [discount, setDiscount] = useState<number>(student.discount || 0);
   const [rollNo, setRollNo] = useState<string>(student.rollNo);
 
-  // New: fee-schedule fields (drive student_fee_schedules via /api/fees/schedule)
+  // Fee-schedule fields (drives student_fee_schedules via /api/fees/schedule)
   const [newFeeAmount, setNewFeeAmount] = useState<number>(student.monthlyFee);
   const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().slice(0, 10));
   const [isSaving, setIsSaving] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const handleFeeScheduleUpdate = async () => {
-    // Only call the endpoint if the fee actually changed - avoids creating
-    // no-op schedule rows every time the modal is saved for unrelated edits.
-    if (Number(newFeeAmount) === Number(student.monthlyFee)) return;
+    const hasFeeChanged = Number(newFeeAmount) !== Number(student.monthlyFee);
+    const hasDiscountChanged = Number(discount) !== Number(student.discount || 0);
+
+    // Avoid creating no-op schedule rows if neither fee nor discount changed
+    if (!hasFeeChanged && !hasDiscountChanged) return;
+
+    // Format date to 1st of the month (YYYY-MM-01) for Postgres DATE matching
+    const formattedEffectiveFrom = effectiveFrom.length >= 7 
+      ? `${effectiveFrom.slice(0, 7)}-01` 
+      : effectiveFrom;
 
     const res = await fetch('/api/fees/schedule', {
       method: 'POST',
@@ -38,7 +44,7 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
         studentId: student.id,
         baseAmount: Math.max(0, Number(newFeeAmount)),
         concession: Math.max(0, Number(discount)),
-        effectiveFrom,
+        effectiveFrom: formattedEffectiveFrom,
       }),
     });
 
@@ -78,7 +84,7 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
       fatherName: fatherName.trim(),
       className,
       contactNo: contactNo.trim(),
-      monthlyFee: Math.max(0, Number(monthlyFee)),
+      monthlyFee: Math.max(0, Number(newFeeAmount)), // Pass updated fee amount
       discount: Math.max(0, Number(discount)),
       rollNo: rollNo.trim(),
     });

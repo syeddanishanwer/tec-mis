@@ -1,12 +1,59 @@
-import React, { useState } from 'react';
-import { StudentRecord, AcademicMonth, ACADEMIC_MONTHS, MonthlyClassSummary } from '../types';
-import {
-  ALL_CLASSES,
-  getEffectiveMonthlyStatus,
-  calculateStudentTotals,
-  getStudentMonthPaidAmount,
-} from '../data/mockStudents';
+import React, { useState, useMemo, useEffect } from 'react';
+import { StudentRecord, AcademicMonth, ACADEMIC_MONTHS, MonthlyClassSummary, Invoice } from '../types';
+import { ALL_CLASSES } from '../data/mockStudents';
 import { Users, TrendingUp, AlertCircle, CheckCircle2, Calendar, Award, Layers } from 'lucide-react';
+
+// Custom Hook to fetch Invoices from API
+export const useInvoices = (year?: string) => {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      setLoading(true);
+      try {
+        const startYear = year ? year.split('-')[0] : undefined;
+        const url = startYear ? `/api/invoices?year=${startYear}` : '/api/invoices';
+        const res = await fetch(url);
+        const data = await res.json();
+        setInvoices(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Error fetching invoices:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInvoices();
+  }, [year]);
+
+  return { invoices, loading };
+};
+
+// Helper to convert AcademicMonth into YYYY-MM-01 ISO date string
+const getMonthYearString = (month: AcademicMonth, academicYear: string): string => {
+  const [startYearStr] = academicYear.split('-');
+  const startYear = parseInt(startYearStr, 10) || 2026;
+  const endYear = startYear + 1;
+
+  const monthMap: Record<AcademicMonth, { monthNum: string; year: number }> = {
+    Jun: { monthNum: '06', year: startYear },
+    Jul: { monthNum: '07', year: startYear },
+    Aug: { monthNum: '08', year: startYear },
+    Sep: { monthNum: '09', year: startYear },
+    Oct: { monthNum: '10', year: startYear },
+    Nov: { monthNum: '11', year: startYear },
+    Dec: { monthNum: '12', year: startYear },
+    Jan: { monthNum: '01', year: endYear },
+    Feb: { monthNum: '02', year: endYear },
+    Mar: { monthNum: '03', year: endYear },
+    Apr: { monthNum: '04', year: endYear },
+    May: { monthNum: '05', year: endYear },
+  };
+
+  const target = monthMap[month] || { monthNum: '01', year: startYear };
+  return `${target.year}-${target.monthNum}-01`;
+};
 
 interface Props {
   students: StudentRecord[];
@@ -24,6 +71,19 @@ export const MonthlySummary: React.FC<Props> = ({
   const [internalActiveMonth, setInternalActiveMonth] = useState<AcademicMonth>('Feb');
   const activeMonth = activeMonthProp || internalActiveMonth;
 
+  // Fetch Invoices from API
+  const { invoices } = useInvoices(activeAcademicYear);
+
+  // Quick lookup map: studentId_YYYY-MM-01 -> Invoice
+  const invoiceMap = useMemo(() => {
+    const map = new Map<string, Invoice>();
+    invoices.forEach((inv) => {
+      const formattedMonth = inv.month_year.slice(0, 10);
+      map.set(`${inv.student_id}_${formattedMonth}`, inv);
+    });
+    return map;
+  }, [invoices]);
+
   const handleMonthChange = (m: AcademicMonth) => {
     if (onActiveMonthChange) {
       onActiveMonthChange(m);
@@ -33,23 +93,44 @@ export const MonthlySummary: React.FC<Props> = ({
   };
 
   // Filter students enrolled or evaluated for this academic year
-  const activeYearStudents = students.filter(
-    (s) => s.academicYear === activeAcademicYear || s.yearlyStatus?.[activeAcademicYear] || true
-  );
+  const activeYearStudents = useMemo(() => {
+    return students.filter(
+      (s) => s.academicYear === activeAcademicYear || s.yearlyStatus?.[activeAcademicYear] || true
+    );
+  }, [students, activeAcademicYear]);
 
   const activeMonthIndex = ACADEMIC_MONTHS.indexOf(activeMonth);
+  const visibleMonths = ACADEMIC_MONTHS.slice(0, activeMonthIndex + 1);
 
-  // Cumulative session totals up to active month (strictly matches FeeLedger & AgingReport!)
-  let sessionBilled = 0;
-  let sessionCollected = 0;
-  let sessionDue = 0;
+  // Cumulative session totals up to active month computed directly from DB invoices
+  const { sessionBilled, sessionCollected, sessionDue } = useMemo(() => {
+    let billed = 0;
+    let collected = 0;
+    let due = 0;
 
-  activeYearStudents.forEach((s) => {
-    const totals = calculateStudentTotals(s, activeMonthIndex, activeAcademicYear);
-    sessionBilled += totals.totalBilled;
-    sessionCollected += totals.totalCollected;
-    sessionDue += totals.totalDue;
-  });
+    activeYearStudents.forEach((s) => {
+      visibleMonths.forEach((m) => {
+        const dateStr = getMonthYearString(m, activeAcademicYear);
+        const inv = invoiceMap.get(`${s.id}_${dateStr}`);
+
+        if (inv) {
+          const invBilled = Number(inv.net_due) || 0;
+          const invPaid = Number(inv.paid_amount) || 0;
+          billed += invBilled;
+          collected += invPaid;
+          due += Math.max(0, invBilled - invPaid);
+        } else {
+          const net = Math.max(0, (s.monthlyFee || 0) - (s.discount || 0));
+          const paid = s.monthlyAmountsPaid?.[m] || 0;
+          billed += net;
+          collected += paid;
+          due += Math.max(0, net - paid);
+        }
+      });
+    });
+
+    return { sessionBilled: billed, sessionCollected: collected, sessionDue: due };
+  }, [activeYearStudents, visibleMonths, activeAcademicYear, invoiceMap]);
 
   const sessionRecoveryRate =
     sessionBilled > 0 ? Math.round((sessionCollected / sessionBilled) * 100) : 0;
@@ -60,17 +141,24 @@ export const MonthlySummary: React.FC<Props> = ({
   let totalExpectedMonth = 0;
   let totalCollectedMonth = 0;
 
+  const targetDateStr = getMonthYearString(activeMonth, activeAcademicYear);
+
   const classBreakdowns: MonthlyClassSummary[] = ALL_CLASSES.map((cls) => {
     const classStudents = activeYearStudents.filter((s) => s.className === cls);
     let classExpected = 0;
     let classCollected = 0;
 
     classStudents.forEach((s) => {
-      const netFee = Math.max(0, s.monthlyFee - s.discount);
-      classExpected += netFee;
-
-      const paidAmt = getStudentMonthPaidAmount(s, activeMonth, activeAcademicYear);
-      classCollected += paidAmt;
+      const inv = invoiceMap.get(`${s.id}_${targetDateStr}`);
+      if (inv) {
+        classExpected += Number(inv.net_due) || 0;
+        classCollected += Number(inv.paid_amount) || 0;
+      } else {
+        const netFee = Math.max(0, (s.monthlyFee || 0) - (s.discount || 0));
+        const paidAmt = s.monthlyAmountsPaid?.[activeMonth] || 0;
+        classExpected += netFee;
+        classCollected += paidAmt;
+      }
     });
 
     totalExpectedMonth += classExpected;
@@ -123,7 +211,7 @@ export const MonthlySummary: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Cumulative Session Totals Card (Reflected consistently with Fee Ledger & Aging Report) */}
+      {/* Cumulative Session Totals Card */}
       <div className="bg-gradient-to-r from-neutral-900 via-neutral-800 to-slate-900 rounded-xl p-5 text-white shadow-sm border border-neutral-700">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-700/80">
           <div className="flex items-center gap-2">
@@ -186,7 +274,6 @@ export const MonthlySummary: React.FC<Props> = ({
 
       {/* 4 KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Active Students */}
         <div className="bg-white rounded-xl border border-neutral-200 p-4 shadow-xs">
           <div className="flex items-center justify-between text-neutral-500 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider">Active Students</span>
@@ -196,7 +283,6 @@ export const MonthlySummary: React.FC<Props> = ({
           <div className="text-[11px] text-neutral-500 mt-1">Across 13 Classes (Reception – X)</div>
         </div>
 
-        {/* Expected Monthly Revenue */}
         <div className="bg-white rounded-xl border border-neutral-200 p-4 shadow-xs">
           <div className="flex items-center justify-between text-neutral-500 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider">Expected ({activeMonth})</span>
@@ -208,7 +294,6 @@ export const MonthlySummary: React.FC<Props> = ({
           <div className="text-[11px] text-neutral-500 mt-1">Total scheduled tuition fees</div>
         </div>
 
-        {/* Collected Fees */}
         <div className="bg-white rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 shadow-xs">
           <div className="flex items-center justify-between text-emerald-800 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider">Collected Revenue</span>
@@ -222,7 +307,6 @@ export const MonthlySummary: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Pending Fees */}
         <div className="bg-white rounded-xl border border-rose-200 bg-rose-50/30 p-4 shadow-xs">
           <div className="flex items-center justify-between text-rose-800 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider">Pending Dues</span>

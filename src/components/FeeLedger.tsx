@@ -1,12 +1,11 @@
-import React, { useState, useMemo } from 'react';
-import { StudentRecord, SchoolClass, AcademicMonth, ACADEMIC_MONTHS, PaymentStatus } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { StudentRecord, SchoolClass, AcademicMonth, ACADEMIC_MONTHS, PaymentStatus, Invoice } from '../types';
 import {
   ALL_CLASSES,
   calculateStudentTotals,
   formatPhoneDisplay,
   getEffectiveMonthlyStatus,
   formatSerialNo,
-  getStudentMonthPaidAmount,
 } from '../data/mockStudents';
 import { exportToCSV, exportToExcel, printFeeLedger } from '../utils/exportHelpers';
 import {
@@ -21,13 +20,61 @@ import {
   Phone,
   Pencil,
   Trash2,
-  CheckCircle,
-  Clock,
-  AlertCircle,
-  HelpCircle,
   Upload,
-  Coins,
 } from 'lucide-react';
+
+// Custom Hook to fetch Invoices from API
+export const useInvoices = (year?: string) => {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      setLoading(true);
+      try {
+        // Extract start year e.g. "2026-2027" -> "2026"
+        const startYear = year ? year.split('-')[0] : undefined;
+        const url = startYear ? `/api/invoices?year=${startYear}` : '/api/invoices';
+        const res = await fetch(url);
+        const data = await res.json();
+        setInvoices(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Error fetching invoices:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInvoices();
+  }, [year]);
+
+  return { invoices, loading };
+};
+
+// Helper to convert AcademicMonth into YYYY-MM-01 string based on academic session
+const getMonthYearString = (month: AcademicMonth, academicYear: string): string => {
+  const [startYearStr] = academicYear.split('-');
+  const startYear = parseInt(startYearStr, 10) || 2026;
+  const endYear = startYear + 1;
+
+  const monthMap: Record<AcademicMonth, { monthNum: string; year: number }> = {
+    Jun: { monthNum: '06', year: startYear },
+    Jul: { monthNum: '07', year: startYear },
+    Aug: { monthNum: '08', year: startYear },
+    Sep: { monthNum: '09', year: startYear },
+    Oct: { monthNum: '10', year: startYear },
+    Nov: { monthNum: '11', year: startYear },
+    Dec: { monthNum: '12', year: startYear },
+    Jan: { monthNum: '01', year: endYear },
+    Feb: { monthNum: '02', year: endYear },
+    Mar: { monthNum: '03', year: endYear },
+    Apr: { monthNum: '04', year: endYear },
+    May: { monthNum: '05', year: endYear },
+  };
+
+  const target = monthMap[month] || { monthNum: '01', year: startYear };
+  return `${target.year}-${target.monthNum}-01`;
+};
 
 interface Props {
   students: StudentRecord[];
@@ -65,6 +112,20 @@ export const FeeLedger: React.FC<Props> = ({
   const [cellDisplayMode, setCellDisplayMode] = useState<'both' | 'amounts' | 'status'>('both');
   const [sortField, setSortField] = useState<'id' | 'className' | 'studentName' | 'collected' | 'total'>('id');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
+
+  // Fetch Invoices from API
+  const { invoices } = useInvoices(activeAcademicYear);
+
+  // Quick lookup map: studentId_YYYY-MM-01 -> Invoice
+  const invoiceMap = useMemo(() => {
+    const map = new Map<string, Invoice>();
+    invoices.forEach((inv) => {
+      // Ensure month_year is formatted YYYY-MM-01
+      const formattedMonth = inv.month_year.slice(0, 10);
+      map.set(`${inv.student_id}_${formattedMonth}`, inv);
+    });
+    return map;
+  }, [invoices]);
 
   // Inline editing state for "Amounts Only (PKR)" mode
   const [editingCell, setEditingCell] = useState<{
@@ -109,12 +170,10 @@ export const FeeLedger: React.FC<Props> = ({
   const filteredStudents = useMemo(() => {
     return students
       .filter((s) => {
-        // Class filter
         if (selectedClass !== 'ALL' && s.className !== selectedClass) {
           return false;
         }
 
-        // Status filter (checks target active month or any month)
         if (selectedStatus !== 'ALL') {
           const statusMap = getEffectiveMonthlyStatus(s, activeAcademicYear);
           const currentStatus = statusMap[activeReminderMonth];
@@ -123,7 +182,6 @@ export const FeeLedger: React.FC<Props> = ({
           }
         }
 
-        // Search query
         if (searchQuery.trim() !== '') {
           const q = searchQuery.toLowerCase();
           const match =
@@ -172,7 +230,7 @@ export const FeeLedger: React.FC<Props> = ({
       });
   }, [students, selectedClass, selectedStatus, searchQuery, activeReminderMonth, sortField, sortAsc, activeAcademicYear, activeMonthIndex]);
 
-  // Aggregate totals for the filtered ledger up to active month
+  // Aggregate totals for the filtered ledger up to active month computed from DB invoices
   const ledgerTotals = useMemo(() => {
     let billed = 0;
     let collected = 0;
@@ -180,20 +238,37 @@ export const FeeLedger: React.FC<Props> = ({
     let fullClearCount = 0;
     let overdueCount = 0;
 
+    const filteredStudentIds = new Set(filteredStudents.map((s) => s.id));
+
     filteredStudents.forEach((student) => {
-      const t = calculateStudentTotals(student, activeMonthIndex, activeAcademicYear);
-      billed += t.totalBilled;
-      collected += t.totalCollected;
-      due += t.totalDue;
-      if (t.totalDue === 0) fullClearCount++;
+      let studentDue = 0;
+      visibleMonths.forEach((m) => {
+        const dateStr = getMonthYearString(m, activeAcademicYear);
+        const inv = invoiceMap.get(`${student.id}_${dateStr}`);
+        if (inv) {
+          const invBilled = inv.net_due;
+          const invPaid = inv.paid_amount;
+          billed += invBilled;
+          collected += invPaid;
+          const invDue = Math.max(0, invBilled - invPaid);
+          due += invDue;
+          studentDue += invDue;
+        } else {
+          const net = Math.max(0, (student.monthlyFee || 0) - (student.discount || 0));
+          billed += net;
+          due += net;
+          studentDue += net;
+        }
+      });
+
+      if (studentDue === 0) fullClearCount++;
       else overdueCount++;
     });
 
     const rate = billed > 0 ? Math.round((collected / billed) * 100) : 0;
     return { billed, collected, due, fullClearCount, overdueCount, rate };
-  }, [filteredStudents, activeMonthIndex, activeAcademicYear]);
+  }, [filteredStudents, visibleMonths, activeAcademicYear, invoiceMap]);
 
-  // Interfaces and calculation helpers for Class-wise and Overall Totals
   interface GroupTotals {
     monthlyFee: number;
     discounts: number;
@@ -229,18 +304,28 @@ export const FeeLedger: React.FC<Props> = ({
     studentList.forEach((s) => {
       monthlyFee += s.monthlyFee || 0;
       discounts += s.discount || 0;
-      const netFee = Math.max(0, (s.monthlyFee || 0) - (s.discount || 0));
 
       visibleMonths.forEach((m) => {
-        const paid = getStudentMonthPaidAmount(s, m, activeAcademicYear);
-        const due = Math.max(0, netFee - paid);
+        const dateStr = getMonthYearString(m, activeAcademicYear);
+        const inv = invoiceMap.get(`${s.id}_${dateStr}`);
+
+        let paid = 0;
+        let due = 0;
+
+        if (inv) {
+          paid = Number(inv.paid_amount) || 0;
+          due = Math.max(0, Number(inv.net_due) - paid);
+        } else {
+          const netFee = Math.max(0, (s.monthlyFee || 0) - (s.discount || 0));
+          paid = s.monthlyAmountsPaid?.[m] || 0;
+          due = Math.max(0, netFee - paid);
+        }
+
         monthsMap[m].collected += paid;
         monthsMap[m].due += due;
+        totalCollected += paid;
+        totalDue += due;
       });
-
-      const t = calculateStudentTotals(s, activeMonthIndex, activeAcademicYear);
-      totalCollected += t.totalCollected;
-      totalDue += t.totalDue;
     });
 
     return {
@@ -259,7 +344,6 @@ export const FeeLedger: React.FC<Props> = ({
     totals: GroupTotals;
   }
 
-  // Group filtered students by class with individual totals calculated
   const classGroups = useMemo<ClassGroup[]>(() => {
     if (filteredStudents.length === 0) return [];
 
@@ -281,12 +365,11 @@ export const FeeLedger: React.FC<Props> = ({
     });
 
     return groups;
-  }, [filteredStudents, visibleMonths, activeMonthIndex, activeAcademicYear]);
+  }, [filteredStudents, visibleMonths, activeAcademicYear, invoiceMap]);
 
-  // Overall Grand Totals across all filtered students
   const overallTotals = useMemo<GroupTotals>(() => {
     return computeTotalsForStudents(filteredStudents);
-  }, [filteredStudents, visibleMonths, activeMonthIndex, activeAcademicYear]);
+  }, [filteredStudents, visibleMonths, activeAcademicYear, invoiceMap]);
 
   const handleSort = (field: 'id' | 'className' | 'studentName' | 'collected' | 'total') => {
     if (sortField === field) {
@@ -313,7 +396,6 @@ export const FeeLedger: React.FC<Props> = ({
       label = 'Partial';
     }
 
-    // "Amounts Only (PKR)" tab: Clicking on each entry allows changing the amount directly
     if (cellDisplayMode === 'amounts') {
       const isEditing =
         editingCell?.studentId === studentId && editingCell?.month === month;
@@ -365,7 +447,6 @@ export const FeeLedger: React.FC<Props> = ({
       );
     }
 
-    // Status Only tab and Status & Amounts tab: Clicking changes the status
     return (
       <button
         type="button"
@@ -392,7 +473,6 @@ export const FeeLedger: React.FC<Props> = ({
       {/* Top Filter and Controls Bar */}
       <div className="bg-white p-4 rounded-xl border border-neutral-200/80 shadow-xs space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          {/* Export action buttons matching DataTables Buttons Extension */}
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mr-1">
               Exports:
@@ -455,7 +535,6 @@ export const FeeLedger: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* Right Action buttons */}
           <div className="flex items-center gap-2">
             <button
               onClick={onOpenImport}
@@ -477,7 +556,6 @@ export const FeeLedger: React.FC<Props> = ({
 
         {/* Dynamic Filters Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-neutral-100">
-          {/* Class Dropdown Filter */}
           <div>
             <label className="text-xs font-semibold text-neutral-600 block mb-1">
               <Filter className="w-3 h-3 inline mr-1" />
@@ -497,7 +575,6 @@ export const FeeLedger: React.FC<Props> = ({
             </select>
           </div>
 
-          {/* Active Evaluation Month */}
           <div>
             <label className="text-xs font-semibold text-neutral-600 block mb-1">
               Active Month
@@ -515,7 +592,6 @@ export const FeeLedger: React.FC<Props> = ({
             </select>
           </div>
 
-          {/* Payment Status Filter */}
           <div>
             <label className="text-xs font-semibold text-neutral-600 block mb-1">
               Payment Status ({activeReminderMonth})
@@ -532,7 +608,6 @@ export const FeeLedger: React.FC<Props> = ({
             </select>
           </div>
 
-          {/* Real-time Search Filter */}
           <div>
             <label className="text-xs font-semibold text-neutral-600 block mb-1">
               Search Student / Parent / Phone
@@ -563,7 +638,6 @@ export const FeeLedger: React.FC<Props> = ({
                     ? 'bg-white text-neutral-900 font-bold shadow-xs'
                     : 'text-neutral-600 hover:text-neutral-900'
                 }`}
-                title="Shows both payment status and exact fee amount in PKR"
               >
                 Status & Amounts
               </button>
@@ -575,7 +649,6 @@ export const FeeLedger: React.FC<Props> = ({
                     ? 'bg-white text-neutral-900 font-bold shadow-xs'
                     : 'text-neutral-600 hover:text-neutral-900'
                 }`}
-                title="Shows plugged fee amount numbers directly in each month column. Click any entry to change amount."
               >
                 Amounts Only (PKR)
               </button>
@@ -587,17 +660,10 @@ export const FeeLedger: React.FC<Props> = ({
                     ? 'bg-white text-neutral-900 font-bold shadow-xs'
                     : 'text-neutral-600 hover:text-neutral-900'
                 }`}
-                title="Shows standard status badges. Click any entry to cycle status."
               >
                 Status Only
               </button>
             </div>
-
-            {cellDisplayMode === 'amounts' && (
-              <span className="text-[11px] font-medium text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
-                Click any entry to change amount
-              </span>
-            )}
           </div>
 
           <div className="text-xs text-neutral-500 font-medium flex items-center gap-2">
@@ -665,12 +731,6 @@ export const FeeLedger: React.FC<Props> = ({
             <span className="font-semibold text-neutral-800 text-xs">
               Showing active months: June to {activeReminderMonth} ({visibleMonths.length} months visible)
             </span>
-            <span className="text-neutral-400 text-[11px] hidden lg:inline">
-              &bull; Subsequent months hidden as requested
-            </span>
-            <span className="text-amber-700 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-md text-[10px] font-semibold hidden md:inline-flex items-center gap-1 shadow-2xs">
-              Left-click &amp; drag to pan view
-            </span>
           </div>
           <div className="flex items-center gap-3 text-[11px]">
             <span className="text-emerald-700 font-semibold">
@@ -733,7 +793,6 @@ export const FeeLedger: React.FC<Props> = ({
                 <th
                   onClick={() => handleSort('collected')}
                   className="py-3 px-3 text-right cursor-pointer hover:bg-neutral-800 min-w-[115px]"
-                  title="Sort by Total Collected up to active month"
                 >
                   <div className="flex items-center justify-end gap-1">
                     Total Collected
@@ -743,7 +802,6 @@ export const FeeLedger: React.FC<Props> = ({
                 <th
                   onClick={() => handleSort('total')}
                   className="py-3 px-3 text-right cursor-pointer hover:bg-neutral-800 min-w-[110px]"
-                  title="Sort by Total Due"
                 >
                   <div className="flex items-center justify-end gap-1">
                     Total Due
@@ -765,15 +823,38 @@ export const FeeLedger: React.FC<Props> = ({
                   {classGroups.map((group) => {
                     return (
                       <React.Fragment key={group.className}>
-                        {/* Students of this Class */}
                         {group.students.map((student) => {
-                          const totals = calculateStudentTotals(student, activeMonthIndex, activeAcademicYear);
                           const statusMap = getEffectiveMonthlyStatus(student, activeAcademicYear);
-                          const isCriticalDefaulter = totals.overdueMonthsCount >= 3;
                           const globalIdx = filteredStudents.indexOf(student);
                           const displaySNo = student.serialNo
                             ? formatSerialNo(student.serialNo)
                             : formatSerialNo(student.id, globalIdx + 1);
+
+                          // Compute per-student totals directly from DB Invoices
+                          let studentCollected = 0;
+                          let studentDue = 0;
+                          let studentOverdueCount = 0;
+
+                          visibleMonths.forEach((m) => {
+                            const dateStr = getMonthYearString(m, activeAcademicYear);
+                            const inv = invoiceMap.get(`${student.id}_${dateStr}`);
+                            if (inv) {
+                              const paid = Number(inv.paid_amount) || 0;
+                              const dueAmt = Math.max(0, Number(inv.net_due) - paid);
+                              studentCollected += paid;
+                              studentDue += dueAmt;
+                              if (dueAmt > 0) studentOverdueCount++;
+                            } else {
+                              const netFee = Math.max(0, (student.monthlyFee || 0) - (student.discount || 0));
+                              const paid = student.monthlyAmountsPaid?.[m] || 0;
+                              const dueAmt = Math.max(0, netFee - paid);
+                              studentCollected += paid;
+                              studentDue += dueAmt;
+                              if (dueAmt > 0) studentOverdueCount++;
+                            }
+                          });
+
+                          const isCriticalDefaulter = studentOverdueCount >= 3;
 
                           return (
                             <tr
@@ -782,19 +863,16 @@ export const FeeLedger: React.FC<Props> = ({
                                 isCriticalDefaulter ? 'bg-red-50/30' : ''
                               }`}
                             >
-                              {/* S# (Manually Assigned 001, 002, etc.) */}
                               <td className="py-2.5 px-3 text-center text-neutral-800 font-mono font-bold text-xs bg-neutral-50/50">
                                 {displaySNo}
                               </td>
 
-                              {/* Class */}
                               <td className="py-2.5 px-3">
                                 <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-800 border border-neutral-300/80 whitespace-nowrap">
                                   {student.className}
                                 </span>
                               </td>
 
-                              {/* Student Name */}
                               <td className="py-2.5 px-3">
                                 <div className="font-semibold text-neutral-900 leading-tight">
                                   {student.studentName}
@@ -804,17 +882,14 @@ export const FeeLedger: React.FC<Props> = ({
                                 </div>
                               </td>
 
-                              {/* Father Name */}
                               <td className="py-2.5 px-3 text-neutral-700 font-medium whitespace-nowrap">
                                 {student.fatherName}
                               </td>
 
-                              {/* Contact No. */}
                               <td className="py-2.5 px-3 font-mono text-neutral-600 text-[11px] whitespace-nowrap">
                                 {formatPhoneDisplay(student.contactNo)}
                               </td>
 
-                              {/* M. FEE */}
                               <td className="py-2.5 px-3 text-right font-semibold text-neutral-800 whitespace-nowrap">
                                 Rs. {student.monthlyFee.toLocaleString()}
                                 {student.discount > 0 && (
@@ -824,9 +899,17 @@ export const FeeLedger: React.FC<Props> = ({
                                 )}
                               </td>
 
-                              {/* Monthly status pills up to active month only */}
                               {visibleMonths.map((m) => {
-                                const paidAmount = getStudentMonthPaidAmount(student, m, activeAcademicYear);
+                                const dateStr = getMonthYearString(m, activeAcademicYear);
+                                const inv = invoiceMap.get(`${student.id}_${dateStr}`);
+                                const paidAmount = inv 
+                                  ? Number(inv.paid_amount) 
+                                  : (student.monthlyAmountsPaid?.[m] || 0);
+
+                                const currentStatus = inv 
+                                  ? (inv.status === 'paid' ? 'paid' : inv.status === 'partial' ? 'partial' : 'pending')
+                                  : (statusMap[m] || 'pending');
+
                                 return (
                                   <td
                                     key={m}
@@ -834,71 +917,61 @@ export const FeeLedger: React.FC<Props> = ({
                                       m === activeReminderMonth ? 'bg-blue-50/50 font-medium' : ''
                                     }`}
                                   >
-                                    {getStatusBadge(statusMap[m] || 'pending', student.id, m, paidAmount)}
+                                    {getStatusBadge(currentStatus, student.id, m, paidAmount)}
                                   </td>
                                 );
                               })}
 
-                              {/* Total Collected (before Total Due) */}
                               <td className="py-2.5 px-3 text-right whitespace-nowrap">
                                 <span className="font-bold text-emerald-700 text-xs">
-                                  Rs. {totals.totalCollected.toLocaleString()}
+                                  Rs. {studentCollected.toLocaleString()}
                                 </span>
                               </td>
 
-                              {/* Total Due */}
                               <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                                {totals.totalDue > 0 ? (
+                                {studentDue > 0 ? (
                                   <span className="font-bold text-red-600 text-xs">
-                                    Rs. {totals.totalDue.toLocaleString()}
+                                    Rs. {studentDue.toLocaleString()}
                                   </span>
                                 ) : (
                                   <span className="font-bold text-emerald-600 text-xs">
                                     Rs. 0 (Cleared)
                                   </span>
                                 )}
-                                {totals.overdueMonthsCount > 0 && (
+                                {studentOverdueCount > 0 && (
                                   <span className="block text-[10px] text-neutral-400">
-                                    {totals.overdueMonthsCount} mos. due
+                                    {studentOverdueCount} mos. due
                                   </span>
                                 )}
                               </td>
 
-                              {/* Action Column: Edit, Delete, Direct WhatsApp & Payment Modal */}
                               <td className="py-2.5 px-3 text-center whitespace-nowrap">
                                 <div className="flex items-center justify-center gap-1">
-                                  {/* Edit Student Record */}
                                   <button
                                     onClick={() => onEditStudent(student)}
-                                    className="p-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 hover:text-neutral-900 border border-neutral-300 rounded-md transition-colors"
-                                    title={`Edit ${student.studentName} (S#, Class, Name, Father Name, Contact, M. FEE)`}
+                                    className="p-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 border border-neutral-300 rounded-md transition-colors"
+                                    title="Edit Student Record"
                                   >
                                     <Pencil className="w-3.5 h-3.5" />
                                   </button>
-
-                                  {/* Delete Student Record */}
                                   <button
                                     onClick={() => onDeleteStudent(student)}
-                                    className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 border border-red-200 rounded-md transition-colors"
-                                    title={`Delete ${student.studentName} from register`}
+                                    className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-md transition-colors"
+                                    title="Delete Student Record"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
-
-                                  {/* Direct WhatsApp Reminder Button */}
                                   <button
                                     onClick={() => onOpenWhatsApp(student, activeReminderMonth)}
                                     className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs transition-colors"
-                                    title={`Send automated WhatsApp reminder to ${student.fatherName}`}
+                                    title="Send WhatsApp Reminder"
                                   >
                                     <Phone className="w-3.5 h-3.5" />
                                   </button>
-
-                                  {/* Quick Payment Button */}
                                   <button
                                     onClick={() => onOpenPaymentModal(student)}
                                     className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md transition-colors"
-                                    title="Log payment or issue receipt"
+                                    title="Log Payment"
                                   >
                                     <CreditCard className="w-3.5 h-3.5" />
                                   </button>
@@ -908,205 +981,87 @@ export const FeeLedger: React.FC<Props> = ({
                           );
                         })}
 
-                        {/* Class Subtotal Row after last student of each class */}
+                        {/* Class Subtotal Row */}
                         <tr
                           key={`total-${group.className}`}
-                          className="bg-neutral-100/90 font-semibold border-t-2 border-b border-neutral-300/90 shadow-2xs"
+                          className="bg-neutral-100/90 font-semibold border-t-2 border-b border-neutral-300/90"
                         >
-                          {/* Col 1-5: S#, Class, Student Name, Father Name, Contact No */}
-                          <td
-                            colSpan={5}
-                            className="py-2.5 px-3 bg-neutral-100 text-neutral-800 text-xs"
-                          >
+                          <td colSpan={5} className="py-2.5 px-3 text-neutral-800 text-xs">
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                                <span className="font-bold text-neutral-900 text-xs uppercase tracking-wide">
-                                  Total — {group.className}
-                                </span>
-                              </div>
-                              <span className="text-[11px] font-medium text-neutral-600 bg-white px-2 py-0.5 rounded border border-neutral-300/80 shadow-2xs">
-                                {group.students.length} {group.students.length === 1 ? 'student' : 'students'}
+                              <span className="font-bold text-neutral-900 text-xs uppercase tracking-wide">
+                                Total — {group.className}
+                              </span>
+                              <span className="text-[11px] font-medium text-neutral-600 bg-white px-2 py-0.5 rounded border border-neutral-300/80">
+                                {group.students.length} students
                               </span>
                             </div>
                           </td>
 
-                          {/* Col 6: M. FEE */}
-                          <td className="py-2.5 px-3 text-right font-bold text-neutral-900 whitespace-nowrap bg-neutral-100 font-mono text-xs">
+                          <td className="py-2.5 px-3 text-right font-bold text-neutral-900 font-mono text-xs">
                             Rs. {group.totals.monthlyFee.toLocaleString()}
-                            {group.totals.discounts > 0 && (
-                              <span className="block text-[10px] text-emerald-600 font-normal font-sans">
-                                (-{group.totals.discounts.toLocaleString()})
-                              </span>
-                            )}
                           </td>
 
-                          {/* Month Columns: Jun, Jul, Aug, ... */}
                           {visibleMonths.map((m) => {
                             const mData = group.totals.months[m] || { collected: 0, due: 0 };
                             return (
-                              <td
-                                key={`class-total-${group.className}-${m}`}
-                                className={`py-2 px-1 text-center whitespace-nowrap bg-neutral-100 ${
-                                  m === activeReminderMonth ? 'bg-blue-100/70' : ''
-                                }`}
-                              >
-                                <div className="flex flex-col items-center justify-center leading-tight">
-                                  <span
-                                    className="font-mono font-bold text-emerald-700 text-[11px]"
-                                    title={`${group.className} - ${m} Collected: Rs. ${mData.collected.toLocaleString()}`}
-                                  >
-                                    {mData.collected.toLocaleString()}
-                                  </span>
-                                  <span
-                                    className={`font-mono text-[10px] font-semibold mt-0.5 ${
-                                      mData.due > 0 ? 'text-rose-600' : 'text-neutral-400 font-normal'
-                                    }`}
-                                    title={`${group.className} - ${m} Due: Rs. ${mData.due.toLocaleString()}`}
-                                  >
-                                    {mData.due > 0 ? `Due: ${mData.due.toLocaleString()}` : 'Due: 0'}
-                                  </span>
-                                </div>
+                              <td key={`class-total-${group.className}-${m}`} className="py-2 px-1 text-center font-mono text-xs">
+                                <span className="font-bold text-emerald-700 block text-[11px]">
+                                  {mData.collected.toLocaleString()}
+                                </span>
+                                <span className="text-[10px] text-rose-600 block">
+                                  Due: {mData.due.toLocaleString()}
+                                </span>
                               </td>
                             );
                           })}
 
-                          {/* Col: Total Collected */}
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap bg-neutral-100">
-                            <span className="font-mono font-bold text-emerald-700 text-xs">
-                              Rs. {group.totals.totalCollected.toLocaleString()}
-                            </span>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700 text-xs">
+                            Rs. {group.totals.totalCollected.toLocaleString()}
                           </td>
-
-                          {/* Col: Total Due */}
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap bg-neutral-100">
-                            {group.totals.totalDue > 0 ? (
-                              <span className="font-mono font-bold text-rose-600 text-xs">
-                                Rs. {group.totals.totalDue.toLocaleString()}
-                              </span>
-                            ) : (
-                              <span className="font-mono font-bold text-emerald-600 text-xs">
-                                Rs. 0 (Cleared)
-                              </span>
-                            )}
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-600 text-xs">
+                            Rs. {group.totals.totalDue.toLocaleString()}
                           </td>
-
-                          {/* Col: Actions */}
-                          <td className="py-2.5 px-3 text-center bg-neutral-100 text-neutral-400 font-mono text-xs">
-                            —
-                          </td>
+                          <td className="text-center text-neutral-400">—</td>
                         </tr>
                       </React.Fragment>
                     );
                   })}
 
                   {/* Overall Grand Total Row */}
-                  <tr className="bg-neutral-900 text-white font-bold border-t-2 border-neutral-950 shadow-md">
-                    {/* Col 1-5: S#, Class, Student Name, Father Name, Contact No */}
-                    <td
-                      colSpan={5}
-                      className="py-3 px-3 bg-neutral-900 text-white text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                          <span className="font-extrabold uppercase tracking-wider text-white text-xs">
-                            Overall Grand Total
-                          </span>
-                        </div>
-                        <span className="text-[11px] font-semibold text-neutral-300 bg-neutral-800 px-2 py-0.5 rounded border border-neutral-700">
-                          {filteredStudents.length} total {filteredStudents.length === 1 ? 'student' : 'students'}
-                        </span>
-                      </div>
+                  <tr className="bg-neutral-900 text-white font-bold border-t-2 border-neutral-950">
+                    <td colSpan={5} className="py-3 px-3 text-white text-xs">
+                      <span className="font-extrabold uppercase tracking-wider text-xs">
+                        Overall Grand Total
+                      </span>
                     </td>
-
-                    {/* Col 6: M. FEE */}
-                    <td className="py-3 px-3 text-right font-bold text-white whitespace-nowrap bg-neutral-900 font-mono text-xs">
+                    <td className="py-3 px-3 text-right font-mono text-xs font-bold text-white">
                       Rs. {overallTotals.monthlyFee.toLocaleString()}
-                      {overallTotals.discounts > 0 && (
-                        <span className="block text-[10px] text-emerald-400 font-normal font-sans">
-                          (-{overallTotals.discounts.toLocaleString()})
-                        </span>
-                      )}
                     </td>
-
-                    {/* Month Columns: Jun, Jul, Aug, ... */}
                     {visibleMonths.map((m) => {
                       const mData = overallTotals.months[m] || { collected: 0, due: 0 };
                       return (
-                        <td
-                          key={`overall-${m}`}
-                          className={`py-3 px-1 text-center whitespace-nowrap bg-neutral-900 ${
-                            m === activeReminderMonth ? 'bg-neutral-800 ring-1 ring-inset ring-blue-500/50' : ''
-                          }`}
-                        >
-                          <div className="flex flex-col items-center justify-center leading-tight">
-                            <span
-                              className="font-mono font-bold text-emerald-400 text-[11px]"
-                              title={`Overall ${m} Collected: Rs. ${mData.collected.toLocaleString()}`}
-                            >
-                              {mData.collected.toLocaleString()}
-                            </span>
-                            <span
-                              className={`font-mono text-[10px] font-semibold mt-0.5 ${
-                                mData.due > 0 ? 'text-rose-300' : 'text-neutral-400 font-normal'
-                              }`}
-                              title={`Overall ${m} Due: Rs. ${mData.due.toLocaleString()}`}
-                            >
-                              {mData.due > 0 ? `Due: ${mData.due.toLocaleString()}` : 'Due: 0'}
-                            </span>
-                          </div>
+                        <td key={`overall-${m}`} className="py-3 px-1 text-center font-mono text-xs">
+                          <span className="font-bold text-emerald-400 block text-[11px]">
+                            {mData.collected.toLocaleString()}
+                          </span>
+                          <span className="text-[10px] text-rose-300 block">
+                            Due: {mData.due.toLocaleString()}
+                          </span>
                         </td>
                       );
                     })}
-
-                    {/* Col: Total Collected */}
-                    <td className="py-3 px-3 text-right whitespace-nowrap bg-neutral-900">
-                      <span className="font-mono font-bold text-emerald-400 text-xs">
-                        Rs. {overallTotals.totalCollected.toLocaleString()}
-                      </span>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-emerald-400 text-xs">
+                      Rs. {overallTotals.totalCollected.toLocaleString()}
                     </td>
-
-                    {/* Col: Total Due */}
-                    <td className="py-3 px-3 text-right whitespace-nowrap bg-neutral-900">
-                      {overallTotals.totalDue > 0 ? (
-                        <span className="font-mono font-bold text-rose-400 text-xs">
-                          Rs. {overallTotals.totalDue.toLocaleString()}
-                        </span>
-                      ) : (
-                        <span className="font-mono font-bold text-emerald-400 text-xs">
-                          Rs. 0 (Nil)
-                        </span>
-                      )}
+                    <td className="py-3 px-3 text-right font-mono font-bold text-rose-400 text-xs">
+                      Rs. {overallTotals.totalDue.toLocaleString()}
                     </td>
-
-                    {/* Col: Actions */}
-                    <td className="py-3 px-3 text-center bg-neutral-900 text-neutral-400 font-mono text-xs">
-                      —
-                    </td>
+                    <td className="text-center text-neutral-400">—</td>
                   </tr>
                 </>
               )}
             </tbody>
           </table>
-        </div>
-
-        {/* Ledger Footer Metrics */}
-        <div className="p-3.5 bg-neutral-50 border-t border-neutral-200 flex flex-col sm:flex-row items-center justify-between text-xs text-neutral-600 gap-2">
-          <div>
-            Showing <strong>{filteredStudents.length}</strong> of <strong>{students.length}</strong> enrolled students across <strong>{classGroups.length}</strong> {classGroups.length === 1 ? 'class' : 'classes'}
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-600"></span> Green: Collected
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-rose-600"></span> Red: Due
-            </span>
-            <span className="inline-flex items-center gap-1 text-neutral-400 hidden sm:inline">
-              &bull; Includes Class Subtotals &amp; Overall Grand Total
-            </span>
-          </div>
         </div>
       </div>
     </div>
