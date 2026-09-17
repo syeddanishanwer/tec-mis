@@ -1,25 +1,25 @@
 import { sql } from '@vercel/postgres';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyAuth } from '../_auth.js';
+import { verifyAuth } from './_auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // 1. Verify Vercel Cron Header
+  // Allow execution via Vercel Cron Secret or Admin Auth Cookie
   const authHeader = req.headers.authorization;
   const isCronRequest = authHeader === `Bearer ${process.env.CRON_SECRET}`;
-
-  // 2. Verify Manual Admin Login Session
   const isAuthenticatedUser = await verifyAuth(req);
 
   if (!isCronRequest && !isAuthenticatedUser) {
     return res.status(401).json({ error: 'Unauthorized: Access Denied' });
   }
 
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
-    // Determine target month (YYYY-MM-01)
-    // If request passes a specific month in body, use it; otherwise default to 1st of current/upcoming month
+    // Default target month to 1st of current or requested month (e.g., '2026-09-01')
     const targetMonth = req.body?.month || new Date().toISOString().slice(0, 7) + '-01';
 
-    // Insert next month's invoices from active fee schedules
     await sql`
       INSERT INTO invoices (student_id, month_year, base_fee, concession_amount)
       SELECT DISTINCT ON (s.id)
