@@ -185,10 +185,10 @@ export default function App() {
   };
 
   // 2. BULK SAVE STUDENTS (POST)
-  const syncBulkStudentsToBackend = async (studentList: StudentRecord[], targetYear?: string) => {
+  const syncBulkStudentsToBackend = async (studentList: StudentRecord[], targetYear?: string, replace?: boolean) => {
     setIsSyncing(true);
     try {
-      await fetch('/api/students', {
+      await fetch(replace ? '/api/students-replace' : '/api/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -458,7 +458,7 @@ export default function App() {
     }
 
     setStudents(finalStudents);
-    syncBulkStudentsToBackend(finalStudents, activeYear);
+    syncBulkStudentsToBackend(finalStudents, activeYear, strategy === 'replace');
 
     const finalUpdated = stats?.updated ?? 0;
     const finalAdded = stats?.added ?? 0;
@@ -494,7 +494,7 @@ export default function App() {
     showToast(`Academic Year ${newYear} successfully added!`);
   };
 
- // AUTH GUARD: Wait for server verification before deciding what to render
+  // AUTH GUARD: Wait for server verification before deciding what to render
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-neutral-100 flex items-center justify-center">
