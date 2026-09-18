@@ -78,8 +78,8 @@ export const MonthlySummary: React.FC<Props> = ({
   const invoiceMap = useMemo(() => {
     const map = new Map<string, Invoice>();
     invoices.forEach((inv) => {
-      const formattedMonth = inv.month_year.slice(0, 10);
-      map.set(`${inv.student_id}_${formattedMonth}`, inv);
+      const formattedMonth = inv.month.slice(0, 10);
+      map.set(`${inv.studentId}_${formattedMonth}`, inv);
     });
     return map;
   }, [invoices]);
@@ -114,8 +114,8 @@ export const MonthlySummary: React.FC<Props> = ({
         const inv = invoiceMap.get(`${s.id}_${dateStr}`);
 
         if (inv) {
-          const invBilled = Number(inv.net_due) || 0;
-          const invPaid = Number(inv.paid_amount) || 0;
+          const invBilled = Number(inv.netDue) || 0;
+          const invPaid = Number(inv.paidAmount) || 0;
           billed += invBilled;
           collected += invPaid;
           due += Math.max(0, invBilled - invPaid);
@@ -151,8 +151,8 @@ export const MonthlySummary: React.FC<Props> = ({
     classStudents.forEach((s) => {
       const inv = invoiceMap.get(`${s.id}_${targetDateStr}`);
       if (inv) {
-        classExpected += Number(inv.net_due) || 0;
-        classCollected += Number(inv.paid_amount) || 0;
+        classExpected += Number(inv.netDue) || 0;
+        classCollected += Number(inv.paidAmount) || 0;
       } else {
         const netFee = Math.max(0, (s.monthlyFee || 0) - (s.discount || 0));
         const paidAmt = s.monthlyAmountsPaid?.[activeMonth] || 0;

@@ -395,8 +395,8 @@ export async function parseExcelOrCsvFile(
       Dec: 0, Jan: 0, Feb: 0, Mar: 0, Apr: 0, May: 0,
     };
     const monthlyStatuses: Record<AcademicMonth, PaymentStatus> = {
-      Jun: 'pending', Jul: 'pending', Aug: 'pending', Sep: 'pending', Oct: 'pending', Nov: 'pending',
-      Dec: 'pending', Jan: 'pending', Feb: 'pending', Mar: 'pending', Apr: 'pending', May: 'pending',
+      Jun: 'unpaid', Jul: 'unpaid', Aug: 'unpaid', Sep: 'unpaid', Oct: 'unpaid', Nov: 'unpaid',
+      Dec: 'unpaid', Jan: 'unpaid', Feb: 'unpaid', Mar: 'unpaid', Apr: 'unpaid', May: 'unpaid',
     };
 
     ACADEMIC_MONTHS.forEach((m) => {
@@ -411,7 +411,7 @@ export async function parseExcelOrCsvFile(
           monthlyAmounts[m] = amt;
           if (amt >= expectedFee && expectedFee > 0) monthlyStatuses[m] = 'paid';
           else if (amt > 0) monthlyStatuses[m] = 'partial';
-          else monthlyStatuses[m] = 'pending';
+          else monthlyStatuses[m] = 'unpaid';
         } else {
           const strVal = String(rawVal).trim();
           const cleanDigits = strVal.replace(/[^0-9.]/g, '');
@@ -421,7 +421,7 @@ export async function parseExcelOrCsvFile(
             monthlyAmounts[m] = amt;
             if (amt >= expectedFee && expectedFee > 0) monthlyStatuses[m] = 'paid';
             else if (amt > 0) monthlyStatuses[m] = 'partial';
-            else monthlyStatuses[m] = 'pending';
+            else monthlyStatuses[m] = 'unpaid';
           } else {
             const upper = strVal.toUpperCase();
             if (upper.includes('PAID') || upper === 'P' || upper === 'YES' || upper === 'DONE' || upper === 'CLEARED') {
@@ -432,13 +432,13 @@ export async function parseExcelOrCsvFile(
               monthlyStatuses[m] = 'partial';
             } else {
               monthlyAmounts[m] = 0;
-              monthlyStatuses[m] = 'pending';
+              monthlyStatuses[m] = 'unpaid';
             }
           }
         }
       } else {
         monthlyAmounts[m] = 0;
-        monthlyStatuses[m] = 'pending';
+        monthlyStatuses[m] = 'unpaid';
       }
     });
 
