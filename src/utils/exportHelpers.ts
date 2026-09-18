@@ -36,13 +36,13 @@ function calculateInvoiceTotals(
   const targetMonths = ACADEMIC_MONTHS.slice(0, untilMonthIndex + 1);
 
   targetMonths.forEach((m) => {
-    const inv = invoicesMap?.get(`${student.id}_${m}`);
+    const inv = invoicesMap?.get(`${student?.id}_${m}`);
     if (inv) {
-      totalCollected += inv.paidAmount;
-      totalOutstanding += Math.max(0, inv.netDue - inv.paidAmount);
+      totalCollected += inv.paidAmount || 0;
+      totalOutstanding += Math.max(0, (inv.netDue || 0) - (inv.paidAmount || 0));
     } else {
-      const netFee = Math.max(0, (student.monthlyFee || 0) - (student.discount || 0));
-      const paid = student.monthlyAmountsPaid?.[m] || 0;
+      const netFee = Math.max(0, (student?.monthlyFee || 0) - (student?.discount || 0));
+      const paid = student?.monthlyAmountsPaid?.[m] || 0;
       totalCollected += paid;
       totalOutstanding += Math.max(0, netFee - paid);
     }
@@ -85,28 +85,29 @@ export function exportToExcel(
 
   const sheetData: (string | number)[][] = [headers];
 
-  students.forEach((student, idx) => {
+  (students || []).forEach((student, idx) => {
     const totals = calculateInvoiceTotals(student, invoicesMap, currentMonthIndex);
     const monthAmounts = ACADEMIC_MONTHS.map((m) => {
-      const inv = invoicesMap?.get(`${student.id}_${m}`);
-      return inv ? inv.paidAmount : student.monthlyAmountsPaid?.[m] || 0;
+      const inv = invoicesMap?.get(`${student?.id}_${m}`);
+      return inv ? inv.paidAmount : student?.monthlyAmountsPaid?.[m] || 0;
     });
-    const sNo = student.serialNo ? formatSerialNo(student.serialNo) : formatSerialNo(student.id, idx + 1);
+    const sNo = student?.serialNo ? formatSerialNo(student.serialNo) : formatSerialNo(student?.id || idx + 1, idx + 1);
 
-    const changes = student.feeChanges || [];
+    // Defensive check to avoid runtime slice/index errors
+    const changes = Array.isArray(student?.feeChanges) ? student.feeChanges : [];
     const change1 = changes[0] || {};
     const change2 = changes[1] || {};
     const change3 = changes[2] || {};
 
     sheetData.push([
       sNo,
-      student.className,
-      student.rollNo,
-      student.studentName,
-      student.fatherName,
-      formatPhoneDisplay(student.contactNo),
-      student.contactNo2 ? formatPhoneDisplay(student.contactNo2) : '',
-      student.monthlyFee,
+      student?.className || '',
+      student?.rollNo || '',
+      student?.studentName || '',
+      student?.fatherName || '',
+      formatPhoneDisplay(student?.contactNo),
+      student?.contactNo2 ? formatPhoneDisplay(student.contactNo2) : '',
+      student?.monthlyFee || 0,
       change1.newFee || '',
       change1.effectiveFromMonth || '',
       change2.newFee || '',
@@ -186,28 +187,29 @@ export function exportToCSV(
     'Total Outstanding (PKR)',
   ];
 
-  const rows = students.map((student, idx) => {
+  const rows = (students || []).map((student, idx) => {
     const totals = calculateInvoiceTotals(student, invoicesMap, currentMonthIndex);
     const monthAmounts = ACADEMIC_MONTHS.map((m) => {
-      const inv = invoicesMap?.get(`${student.id}_${m}`);
-      return inv ? inv.paidAmount : student.monthlyAmountsPaid?.[m] || 0;
+      const inv = invoicesMap?.get(`${student?.id}_${m}`);
+      return inv ? inv.paidAmount : student?.monthlyAmountsPaid?.[m] || 0;
     });
-    const sNo = student.serialNo ? formatSerialNo(student.serialNo) : formatSerialNo(student.id, idx + 1);
+    const sNo = student?.serialNo ? formatSerialNo(student.serialNo) : formatSerialNo(student?.id || idx + 1, idx + 1);
 
-    const changes = student.feeChanges || [];
+    // Defensive check to avoid runtime slice/index errors
+    const changes = Array.isArray(student?.feeChanges) ? student.feeChanges : [];
     const change1 = changes[0] || {};
     const change2 = changes[1] || {};
     const change3 = changes[2] || {};
 
     return [
       `"=""${sNo}"""`,
-      `"${student.className}"`,
-      `"${student.rollNo}"`,
-      `"${student.studentName}"`,
-      `"${student.fatherName}"`,
-      formatContactForCSV(student.contactNo),
-      formatContactForCSV(student.contactNo2),
-      student.monthlyFee,
+      `"${student?.className || ''}"`,
+      `"${student?.rollNo || ''}"`,
+      `"${student?.studentName || ''}"`,
+      `"${student?.fatherName || ''}"`,
+      formatContactForCSV(student?.contactNo),
+      formatContactForCSV(student?.contactNo2),
+      student?.monthlyFee || 0,
       change1.newFee || '',
       change1.effectiveFromMonth || '',
       change2.newFee || '',
@@ -244,20 +246,20 @@ export function printFeeLedger(
     return;
   }
 
-  const rowsHtml = students
+  const rowsHtml = (students || [])
     .map((s, idx) => {
       const totals = calculateInvoiceTotals(s, invoicesMap, currentMonthIndex);
-      const sNo = s.serialNo ? formatSerialNo(s.serialNo) : formatSerialNo(s.id, idx + 1);
+      const sNo = s?.serialNo ? formatSerialNo(s.serialNo) : formatSerialNo(s?.id || idx + 1, idx + 1);
 
       return `<tr>
         <td style="border:1px solid #ddd;padding:6px;text-align:center;font-family:monospace;font-weight:bold;">${sNo}</td>
-        <td style="border:1px solid #ddd;padding:6px;"><strong>${s.className}</strong></td>
-        <td style="border:1px solid #ddd;padding:6px;">${s.studentName}</td>
-        <td style="border:1px solid #ddd;padding:6px;">${s.fatherName}</td>
-        <td style="border:1px solid #ddd;padding:6px;font-family:monospace;">${formatPhoneDisplay(s.contactNo)}${s.contactNo2 ? `<br/>${formatPhoneDisplay(s.contactNo2)}` : ''}</td>
-        <td style="border:1px solid #ddd;padding:6px;text-align:right;">Rs. ${s.monthlyFee.toLocaleString()}</td>
+        <td style="border:1px solid #ddd;padding:6px;"><strong>${s?.className || ''}</strong></td>
+        <td style="border:1px solid #ddd;padding:6px;">${s?.studentName || ''}</td>
+        <td style="border:1px solid #ddd;padding:6px;">${s?.fatherName || ''}</td>
+        <td style="border:1px solid #ddd;padding:6px;font-family:monospace;">${formatPhoneDisplay(s?.contactNo)}${s?.contactNo2 ? `<br/>${formatPhoneDisplay(s.contactNo2)}` : ''}</td>
+        <td style="border:1px solid #ddd;padding:6px;text-align:right;">Rs. ${(s?.monthlyFee || 0).toLocaleString()}</td>
         ${ACADEMIC_MONTHS.map((m) => {
-          const inv = invoicesMap?.get(`${s.id}_${m}`);
+          const inv = invoicesMap?.get(`${s?.id}_${m}`);
           const st: PaymentStatus = inv ? inv.status : 'unpaid';
           const color = st === 'paid' ? '#198754' : st === 'partial' ? '#fd7e14' : '#dc3545';
           return `<td style="border:1px solid #ddd;padding:6px;text-align:center;color:${color};font-weight:bold;font-size:11px;">${st.toUpperCase()}</td>`;
