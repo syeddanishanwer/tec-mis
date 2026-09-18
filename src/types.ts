@@ -13,7 +13,7 @@ export type SchoolClass =
   | 'Class IX'
   | 'Class X';
 
-export type PaymentStatus = 'paid' | 'pending' | 'partial';
+export type PaymentStatus = 'paid' | 'unpaid' | 'partial';
 
 export const ACADEMIC_MONTHS = [
   'Jun',
@@ -32,23 +32,29 @@ export const ACADEMIC_MONTHS = [
 
 export type AcademicMonth = typeof ACADEMIC_MONTHS[number];
 
+export interface FeeChange {
+  newFee: number;
+  effectiveFromMonth: AcademicMonth;
+}
+
 export interface StudentRecord {
   id: number;
-  serialNo?: string; // S# e.g. '001', '002' manually assigned to each student
+  serialNo?: string;
   rollNo: string;
   studentName: string;
   fatherName: string;
   className: SchoolClass;
-  contactNo: string; // e.g. '923001234567'
-  contactNo2?: string; // Optional secondary contact number
-  monthlyFee: number; // M. FEE (Base Monthly Fee, effective from Jun)
-  monthlyStatus: Record<AcademicMonth, PaymentStatus>;
-  monthlyAmountsPaid?: Partial<Record<AcademicMonth, number>>; // Exact PKR fee amounts recorded or imported for each month
+  contactNo: string;
+  contactNo2?: string;
+  monthlyFee: number;
+  discount: number; // Required number (defaults to 0)
+  academicYear?: string;
+  admissionDate?: string;
+  feeChanges?: FeeChange[];
+  monthlyStatus: Record<AcademicMonth, PaymentStatus>; // Required map for grid compatibility
+  monthlyAmountsPaid?: Partial<Record<AcademicMonth, number>>;
   yearlyStatus?: Record<string, Record<AcademicMonth, PaymentStatus>>;
   yearlyAmountsPaid?: Record<string, Partial<Record<AcademicMonth, number>>>;
-  discount: number; // Optional scholarship/sibling concession
-  academicYear: string;
-  admissionDate: string;
 }
 
 export interface PaymentLog {

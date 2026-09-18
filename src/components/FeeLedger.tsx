@@ -125,7 +125,7 @@ export const FeeLedger: React.FC<Props> = ({
     }
   };
 
-    const activeReminderMonth = activeMonth || internalActiveMonth;
+  const activeReminderMonth = activeMonth || internalActiveMonth;
 
 
   // Quick lookup map: "studentId_month" -> Invoice (e.g. "1000_Sep")
@@ -185,7 +185,7 @@ export const FeeLedger: React.FC<Props> = ({
 
         if (selectedStatus !== 'ALL') {
           const inv = invoiceMap.get(`${s.id}_${activeReminderMonth}`);
-          const currentStatus = inv ? (inv.status === 'unpaid' ? 'pending' : inv.status) : 'pending';
+          const currentStatus = inv ? inv.status : 'unpaid';
           if (currentStatus !== selectedStatus) {
             return false;
           }
@@ -381,7 +381,7 @@ export const FeeLedger: React.FC<Props> = ({
     amount: number
   ) => {
     let bg = 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100';
-    let label = 'Pending';
+    let label = 'Unpaid';
     if (status === 'paid') {
       bg = 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100';
       label = 'Paid';
@@ -389,7 +389,6 @@ export const FeeLedger: React.FC<Props> = ({
       bg = 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100';
       label = 'Partial';
     }
-
     if (cellDisplayMode === 'amounts') {
       const isEditing =
         editingCell?.studentId === studentId && editingCell?.month === month;
@@ -552,12 +551,12 @@ export const FeeLedger: React.FC<Props> = ({
               Enroll Student
             </button>
           </div>
-        {generateMessage && (
-          <div className="text-xs font-medium px-3 py-2 rounded-lg bg-neutral-50 border border-neutral-200 text-neutral-700">
-            {generateMessage}
-          </div>
-        )}
-        </div>        
+          {generateMessage && (
+            <div className="text-xs font-medium px-3 py-2 rounded-lg bg-neutral-50 border border-neutral-200 text-neutral-700">
+              {generateMessage}
+            </div>
+          )}
+        </div>
 
         {/* Dynamic Filters Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-neutral-100">
@@ -607,7 +606,7 @@ export const FeeLedger: React.FC<Props> = ({
               className="w-full text-xs font-medium bg-neutral-50 border border-neutral-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none"
             >
               <option value="ALL">All Statuses</option>
-              <option value="pending">Pending Only (Defaulters)</option>
+              <option value="unpaid">Unpaid Only (Defaulters)</option>
               <option value="partial">Partial Payment</option>
               <option value="paid">Paid (Cleared)</option>
             </select>
@@ -638,33 +637,30 @@ export const FeeLedger: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => setCellDisplayMode('both')}
-                className={`px-2.5 py-1 rounded-md transition-all ${
-                  cellDisplayMode === 'both'
-                    ? 'bg-white text-neutral-900 font-bold shadow-xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
+                className={`px-2.5 py-1 rounded-md transition-all ${cellDisplayMode === 'both'
+                  ? 'bg-white text-neutral-900 font-bold shadow-xs'
+                  : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
               >
                 Status & Amounts
               </button>
               <button
                 type="button"
                 onClick={() => setCellDisplayMode('amounts')}
-                className={`px-2.5 py-1 rounded-md transition-all ${
-                  cellDisplayMode === 'amounts'
-                    ? 'bg-white text-neutral-900 font-bold shadow-xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
+                className={`px-2.5 py-1 rounded-md transition-all ${cellDisplayMode === 'amounts'
+                  ? 'bg-white text-neutral-900 font-bold shadow-xs'
+                  : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
               >
                 Amounts Only (PKR)
               </button>
               <button
                 type="button"
                 onClick={() => setCellDisplayMode('status')}
-                className={`px-2.5 py-1 rounded-md transition-all ${
-                  cellDisplayMode === 'status'
-                    ? 'bg-white text-neutral-900 font-bold shadow-xs'
-                    : 'text-neutral-600 hover:text-neutral-900'
-                }`}
+                className={`px-2.5 py-1 rounded-md transition-all ${cellDisplayMode === 'status'
+                  ? 'bg-white text-neutral-900 font-bold shadow-xs'
+                  : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
               >
                 Status Only
               </button>
@@ -788,9 +784,8 @@ export const FeeLedger: React.FC<Props> = ({
                 {visibleMonths.map((m) => (
                   <th
                     key={m}
-                    className={`py-3 px-1.5 text-center min-w-[62px] ${
-                      m === activeReminderMonth ? 'bg-blue-900/80 text-blue-200 font-bold border-b-2 border-blue-400' : ''
-                    }`}
+                    className={`py-3 px-1.5 text-center min-w-[62px] ${m === activeReminderMonth ? 'bg-blue-900/80 text-blue-200 font-bold border-b-2 border-blue-400' : ''
+                      }`}
                   >
                     {m}
                   </th>
@@ -861,9 +856,8 @@ export const FeeLedger: React.FC<Props> = ({
                           return (
                             <tr
                               key={student.id}
-                              className={`hover:bg-neutral-50/90 transition-colors ${
-                                isCriticalDefaulter ? 'bg-red-50/30' : ''
-                              }`}
+                              className={`hover:bg-neutral-50/90 transition-colors ${isCriticalDefaulter ? 'bg-red-50/30' : ''
+                                }`}
                             >
                               <td className="py-2.5 px-3 text-center text-neutral-800 font-mono font-bold text-xs bg-neutral-50/50">
                                 {displaySNo}
@@ -913,15 +907,14 @@ export const FeeLedger: React.FC<Props> = ({
                                   : (student.monthlyAmountsPaid?.[m] || 0);
 
                                 const currentStatus: PaymentStatus = inv
-                                  ? (inv.status === 'paid' ? 'paid' : inv.status === 'partial' ? 'partial' : 'pending')
-                                  : (getEffectiveMonthlyStatus(student, activeAcademicYear)[m] || 'pending');
+                                  ? (inv.status === 'paid' ? 'paid' : inv.status === 'partial' ? 'partial' : 'unpaid')
+                                  : (getEffectiveMonthlyStatus(student, activeAcademicYear)[m] || 'unpaid');
 
                                 return (
                                   <td
                                     key={m}
-                                    className={`py-2 px-1 text-center whitespace-nowrap ${
-                                      m === activeReminderMonth ? 'bg-blue-50/50 font-medium' : ''
-                                    }`}
+                                    className={`py-2 px-1 text-center whitespace-nowrap ${m === activeReminderMonth ? 'bg-blue-50/50 font-medium' : ''
+                                      }`}
                                   >
                                     {getStatusBadge(currentStatus, student.id, m, paidAmount)}
                                   </td>

@@ -43,6 +43,7 @@ export const EditStudentModal: React.FC<Props> = ({
       credentials: 'include',
       body: JSON.stringify({
         studentId: student.id,
+        rollNo: student.rollNo, // Added rollNo to resolve DB primary key
         monthlyFee: Math.max(0, Number(newFeeAmount)),
         concession: Math.max(0, Number(discount)),
         effectiveFromMonth,
