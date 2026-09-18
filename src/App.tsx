@@ -737,6 +737,7 @@ export default function App() {
       {editingStudent && (
         <EditStudentModal
           student={editingStudent}
+          activeAcademicYear={selectedAcademicYear}
           onClose={() => setEditingStudent(null)}
           onSaveStudent={handleSaveEditedStudent}
         />
