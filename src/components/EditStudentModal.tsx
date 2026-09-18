@@ -21,6 +21,7 @@ export const EditStudentModal: React.FC<Props> = ({
   const [fatherName, setFatherName] = useState<string>(student.fatherName);
   const [className, setClassName] = useState<SchoolClass>(student.className);
   const [contactNo, setContactNo] = useState<string>(student.contactNo);
+  const [contactNo2, setContactNo2] = useState<string>(student.contactNo2 || '');
   const [discount, setDiscount] = useState<number>(student.discount || 0);
   const [rollNo, setRollNo] = useState<string>(student.rollNo);
 
@@ -87,6 +88,7 @@ export const EditStudentModal: React.FC<Props> = ({
       fatherName: fatherName.trim(),
       className,
       contactNo: contactNo.trim(),
+      contactNo2: contactNo2.trim() || undefined,
       monthlyFee: Math.max(0, Number(newFeeAmount)),
       discount: Math.max(0, Number(discount)),
       rollNo: rollNo.trim(),
@@ -203,22 +205,41 @@ export const EditStudentModal: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Contact No. */}
-          <div>
-            <label className="block text-xs font-semibold text-neutral-700 mb-1">
-              Contact No. (WhatsApp Mobile) *
-            </label>
-            <input
-              type="text"
-              value={contactNo}
-              onChange={(e) => setContactNo(e.target.value)}
-              placeholder="923001234567 or 03001234567"
-              className="w-full text-sm border border-neutral-300 rounded-lg p-2.5 font-mono focus:ring-2 focus:ring-neutral-900 focus:outline-none"
-              required
-            />
-            <p className="text-[11px] text-neutral-500 mt-1">
-              Formatted Preview: <strong className="text-neutral-800">{formatPhoneDisplay(contactNo)}</strong>
-            </p>
+          {/* Contact No. 1 & 2 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                Contact No. 1 (WhatsApp Mobile) *
+              </label>
+              <input
+                type="text"
+                value={contactNo}
+                onChange={(e) => setContactNo(e.target.value)}
+                placeholder="923001234567 or 03001234567"
+                className="w-full text-sm border border-neutral-300 rounded-lg p-2.5 font-mono focus:ring-2 focus:ring-neutral-900 focus:outline-none"
+                required
+              />
+              <p className="text-[11px] text-neutral-500 mt-1">
+                Preview: <strong className="text-neutral-800">{formatPhoneDisplay(contactNo)}</strong>
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                Contact No. 2 (Optional)
+              </label>
+              <input
+                type="text"
+                value={contactNo2}
+                onChange={(e) => setContactNo2(e.target.value)}
+                placeholder="Optional alternate number"
+                className="w-full text-sm border border-neutral-300 rounded-lg p-2.5 font-mono focus:ring-2 focus:ring-neutral-900 focus:outline-none"
+              />
+              {contactNo2 && (
+                <p className="text-[11px] text-neutral-500 mt-1">
+                  Preview: <strong className="text-neutral-800">{formatPhoneDisplay(contactNo2)}</strong>
+                </p>
+              )}
+            </div>
           </div>
 
           {/* New Fee + Effective From Month dropdown */}
