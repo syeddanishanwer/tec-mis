@@ -86,8 +86,8 @@ export const AgingReport: React.FC<Props> = ({
   const invoiceMap = useMemo(() => {
     const map = new Map<string, Invoice>();
     invoices.forEach((inv) => {
-      const formattedMonth = inv.month_year.slice(0, 10);
-      map.set(`${inv.student_id}_${formattedMonth}`, inv);
+      const formattedMonth = inv.month.slice(0, 10);
+      map.set(`${inv.studentId}_${formattedMonth}`, inv);
     });
     return map;
   }, [invoices]);
@@ -107,8 +107,8 @@ export const AgingReport: React.FC<Props> = ({
         const inv = invoiceMap.get(`${s.id}_${dateStr}`);
 
         if (inv) {
-          const paid = Number(inv.paid_amount) || 0;
-          const dueAmt = Math.max(0, Number(inv.net_due) - paid);
+          const paid = Number(inv.paidAmount) || 0;
+          const dueAmt = Math.max(0, Number(inv.netDue) - paid);
           totalCollected += paid;
           totalDue += dueAmt;
           if (dueAmt > 0) overdueMonthsCount++;
