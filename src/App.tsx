@@ -256,10 +256,10 @@ export default function App() {
       prev.map((s) => {
         if (s.id !== studentId) return s;
         const currentMap = getEffectiveMonthlyStatus(s, selectedAcademicYear);
-        const current = currentMap[month] || 'pending';
+        const current = currentMap[month] || 'unpaid';
         let next: PaymentStatus = 'paid';
         if (current === 'paid') next = 'partial';
-        else if (current === 'partial') next = 'pending';
+        else if (current === 'partial') next = 'unpaid';
         else next = 'paid';
         newStatus = next;
 
@@ -301,10 +301,10 @@ export default function App() {
         studentName = s.studentName;
         const effectiveFee = Math.max(0, s.monthlyFee - s.discount);
 
-        let derivedStatus: PaymentStatus = 'pending';
+        let derivedStatus: PaymentStatus = 'unpaid';
         if (validAmount >= effectiveFee && effectiveFee > 0) derivedStatus = 'paid';
         else if (validAmount > 0) derivedStatus = 'partial';
-        else derivedStatus = 'pending';
+        else derivedStatus = 'unpaid';
 
         const currentMap = getEffectiveMonthlyStatus(s, selectedAcademicYear);
         const updatedMap = { ...currentMap, [month]: derivedStatus };
@@ -368,7 +368,7 @@ export default function App() {
     const studentWithId: StudentRecord = {
       ...newStudent,
       id: nextId,
-      yearlyStatus: { [newStudent.academicYear]: newStudent.monthlyStatus },
+      yearlyStatus: { [newStudent.academicYear || selectedAcademicYear]: newStudent.monthlyStatus },
     };
 
     setStudents((prev) => [studentWithId, ...prev]);
@@ -473,9 +473,9 @@ export default function App() {
 
     if (rolloverStudents) {
       const defaultStatuses: Record<AcademicMonth, PaymentStatus> = {
-        Jun: 'pending', Jul: 'pending', Aug: 'pending', Sep: 'pending',
-        Oct: 'pending', Nov: 'pending', Dec: 'pending', Jan: 'pending',
-        Feb: 'pending', Mar: 'pending', Apr: 'pending', May: 'pending',
+        Jun: 'unpaid', Jul: 'unpaid', Aug: 'unpaid', Sep: 'unpaid',
+        Oct: 'unpaid', Nov: 'unpaid', Dec: 'unpaid', Jan: 'unpaid',
+        Feb: 'unpaid', Mar: 'unpaid', Apr: 'unpaid', May: 'unpaid',
       };
 
       const rolledOverStudents: StudentRecord[] = students.map((s) => ({
