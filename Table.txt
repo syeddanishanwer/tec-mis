@@ -1,0 +1,42 @@
+table_name,column_name,data_type,is_nullable
+invoices,id,integer,NO
+invoices,student_id,integer,NO
+invoices,academic_year,text,NO
+invoices,month,text,NO
+invoices,base_fee,numeric,NO
+invoices,concession_amount,numeric,YES
+invoices,net_due,numeric,NO
+invoices,paid_amount,numeric,YES
+invoices,status,text,NO
+invoices,note,text,YES
+invoices,created_at,timestamp with time zone,YES
+invoices,updated_at,timestamp with time zone,YES
+one_time_charges,id,integer,NO
+one_time_charges,student_id,integer,NO
+one_time_charges,charge_type,text,NO
+one_time_charges,amount,numeric,NO
+one_time_charges,charge_date,date,NO
+one_time_charges,paid_amount,numeric,NO
+one_time_charges,status,text,NO
+one_time_charges,is_refundable,boolean,NO
+one_time_charges,notes,text,YES
+student_fee_schedules,id,integer,NO
+student_fee_schedules,student_id,integer,NO
+student_fee_schedules,monthly_fee,numeric,NO
+student_fee_schedules,concession,numeric,YES
+student_fee_schedules,effective_from_month,text,NO
+student_fee_schedules,academic_year,text,NO
+student_fee_schedules,created_at,timestamp with time zone,YES
+students,id,integer,NO
+students,serial_no,text,YES
+students,roll_no,text,NO
+students,student_name,text,NO
+students,father_name,text,NO
+students,class_name,text,NO
+students,contact_no,text,YES
+students,academic_year,text,NO
+students,admission_date,date,YES
+students,data,jsonb,YES
+students,created_at,timestamp with time zone,YES
+students,updated_at,timestamp with time zone,YES
+students,contact_no_2,text,YES

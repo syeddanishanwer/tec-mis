@@ -1,9 +1,11 @@
 import type { VercelRequest } from '@vercel/node';
 import { jwtVerify } from 'jose';
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'fallback_secret_key_must_be_long_enough'
-);
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is not set.');
+}
+
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 export async function verifyAuth(req: VercelRequest): Promise<boolean> {
   try {

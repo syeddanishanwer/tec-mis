@@ -2,40 +2,30 @@ import { sql } from '@vercel/postgres';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyAuth } from './_auth.js';
 
+const VALID_MONTHS = ['Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'];
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const isAuthenticated = await verifyAuth(req);
   if (!isAuthenticated) {
     return res.status(401).json({ error: 'Unauthorized: Access Denied' });
   }
-
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { studentId, baseAmount, concession, effectiveFrom } = req.body;
+    const { studentId, monthlyFee, concession, effectiveFromMonth, academicYear } = req.body;
 
-    if (!studentId || baseAmount === undefined || !effectiveFrom) {
-      return res.status(400).json({ error: 'Missing studentId, baseAmount, or effectiveFrom' });
+    if (!studentId || monthlyFee === undefined || !effectiveFromMonth || !academicYear) {
+      return res.status(400).json({ error: 'Missing studentId, monthlyFee, effectiveFromMonth, or academicYear' });
+    }
+    if (!VALID_MONTHS.includes(effectiveFromMonth)) {
+      return res.status(400).json({ error: `effectiveFromMonth must be one of: ${VALID_MONTHS.join(', ')}` });
     }
 
-    const formattedEffectiveFrom = effectiveFrom.length === 7 
-      ? `${effectiveFrom}-01` 
-      : `${effectiveFrom.slice(0, 7)}-01`;
-
     await sql`
-      INSERT INTO student_fee_schedules (
-        student_id, 
-        base_fee, 
-        concession_amount, 
-        effective_from_date
-      )
-      VALUES (
-        ${studentId}, 
-        ${baseAmount}, 
-        ${concession ?? 0}, 
-        ${formattedEffectiveFrom}
-      );
+      INSERT INTO student_fee_schedules (student_id, monthly_fee, concession, effective_from_month, academic_year)
+      VALUES (${studentId}, ${monthlyFee}, ${concession ?? 0}, ${effectiveFromMonth}, ${academicYear});
     `;
 
     return res.status(200).json({ success: true, studentId });

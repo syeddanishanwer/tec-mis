@@ -5,28 +5,34 @@ import { verifyAuth } from './_auth.js';
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const isAuthenticated = await verifyAuth(req);
   if (!isAuthenticated) return res.status(401).json({ error: 'Unauthorized: Access Denied' });
-
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { studentId, monthYear, baseFee, concessionAmount } = req.body;
+    const { studentId, academicYear, month, baseFee, concessionAmount } = req.body;
 
-    if (!studentId || !monthYear || baseFee === undefined) {
-      return res.status(400).json({ error: 'Missing studentId, monthYear, or baseFee' });
+    if (!studentId || !academicYear || !month || baseFee === undefined) {
+      return res.status(400).json({ error: 'Missing studentId, academicYear, month, or baseFee' });
     }
 
-    const formattedMonth = monthYear.length === 7 ? `${monthYear}-01` : monthYear;
+    const concession = concessionAmount ?? 0;
+    const netDue = Number(baseFee) - Number(concession);
 
-    // Direct update to an already existing past invoice
     await sql`
       UPDATE invoices
-      SET 
+      SET
         base_fee = ${baseFee},
-        concession_amount = ${concessionAmount ?? 0}
-      WHERE student_id = ${studentId} AND month_year = ${formattedMonth}::DATE;
+        concession_amount = ${concession},
+        net_due = ${netDue},
+        status = CASE
+          WHEN paid_amount >= ${netDue} THEN 'paid'
+          WHEN paid_amount > 0 THEN 'partial'
+          ELSE 'unpaid'
+        END,
+        updated_at = now()
+      WHERE student_id = ${studentId} AND academic_year = ${academicYear} AND month = ${month};
     `;
 
-    return res.status(200).json({ success: true, studentId, monthYear: formattedMonth });
+    return res.status(200).json({ success: true, studentId, academicYear, month });
   } catch (error: any) {
     console.error('Update Invoice Error:', error);
     return res.status(500).json({ error: error.message || 'Internal Server Error' });

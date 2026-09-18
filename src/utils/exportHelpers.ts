@@ -1,13 +1,26 @@
 import * as XLSX from 'xlsx';
-import { StudentRecord, ACADEMIC_MONTHS } from '../types';
+import { StudentRecord, ACADEMIC_MONTHS, AcademicMonth } from '../types';
 import { calculateStudentTotals, formatPhoneDisplay, getEffectiveMonthlyStatus, formatSerialNo, getStudentMonthPaidAmount } from '../data/mockStudents';
+
+/**
+ * Determines the index (0-11) of the current academic month within ACADEMIC_MONTHS
+ * (Jun=0 ... May=11), based on today's real calendar date. Mirrors the same logic
+ * App.tsx uses to default sharedActiveMonth, so exports match what's on screen
+ * "as of today" rather than a stale hardcoded cutoff.
+ */
+function getCurrentAcademicMonthIndex(): number {
+  const currentMonthName = new Date().toLocaleString('en-US', { month: 'short' }) as AcademicMonth;
+  const idx = ACADEMIC_MONTHS.indexOf(currentMonthName);
+  return idx !== -1 ? idx : 0; // Fallback to Jun (start of year) if somehow unmatched
+}
 
 /**
  * Format phone number for CSV so Excel displays it as a Special Phone Number
  * rather than converting to scientific notation (e.g., 9.23E+11).
  * In Excel CSV format, enclosing the text as `="<phone>"` forces text/special format.
  */
-function formatContactForCSV(rawNumber: string): string {
+function formatContactForCSV(rawNumber: string | undefined): string {
+  if (!rawNumber) return '';
   const formatted = formatPhoneDisplay(rawNumber);
   // Excel formula format: "=""<formatted>""" forces cell to evaluate as text string
   return `"=""${formatted}"""`;
@@ -23,6 +36,7 @@ export function exportToExcel(
   activeYear: string = '2026-2027'
 ) {
   const actualFilename = filename || `School_Fee_Ledger_${activeYear.replace('-', '_')}.xlsx`;
+  const currentMonthIndex = getCurrentAcademicMonthIndex();
 
   const headers = [
     'S#',
@@ -30,7 +44,8 @@ export function exportToExcel(
     'Roll No',
     'Student Name',
     'Father Name',
-    'Contact No (Phone)',
+    'Contact No 1 (Phone)',
+    'Contact No 2 (Phone)',
     'Monthly Fee (PKR)',
     ...ACADEMIC_MONTHS,
     'Total Outstanding (PKR)',
@@ -39,7 +54,7 @@ export function exportToExcel(
   const sheetData: (string | number)[][] = [headers];
 
   students.forEach((student, idx) => {
-    const totals = calculateStudentTotals(student, 8, activeYear);
+    const totals = calculateStudentTotals(student, currentMonthIndex, activeYear);
     const monthAmounts = ACADEMIC_MONTHS.map((m) => getStudentMonthPaidAmount(student, m, activeYear));
     const sNo = student.serialNo ? formatSerialNo(student.serialNo) : formatSerialNo(student.id, idx + 1);
 
@@ -50,6 +65,7 @@ export function exportToExcel(
       student.studentName,
       student.fatherName,
       formatPhoneDisplay(student.contactNo),
+      student.contactNo2 ? formatPhoneDisplay(student.contactNo2) : '',
       student.monthlyFee,
       ...monthAmounts,
       totals.totalOutstanding,
@@ -65,24 +81,24 @@ export function exportToExcel(
     { wch: 10 }, // Roll No
     { wch: 22 }, // Student Name
     { wch: 22 }, // Father Name
-    { wch: 18 }, // Contact No (Phone)
+    { wch: 18 }, // Contact No 1 (Phone)
+    { wch: 18 }, // Contact No 2 (Phone)
     { wch: 18 }, // Monthly Fee (PKR)
     ...ACADEMIC_MONTHS.map(() => ({ wch: 9 })), // Month statuses
     { wch: 24 }, // Total Outstanding (PKR)
   ];
 
-  // Ensure S# and contact numbers are treated as text cells (type 's') to avoid stripping leading zeros or scientific notation
+  // Ensure S# and both contact numbers are treated as text cells (type 's') to avoid
+  // stripping leading zeros or scientific notation
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+  const textColumns = [0, 5, 6]; // S#, Contact No 1, Contact No 2
   for (let r = 1; r <= range.e.r; ++r) {
-    const sNoCell = XLSX.utils.encode_cell({ c: 0, r });
-    if (ws[sNoCell]) {
-      ws[sNoCell].t = 's';
-      ws[sNoCell].z = '@';
-    }
-    const phoneCell = XLSX.utils.encode_cell({ c: 5, r });
-    if (ws[phoneCell]) {
-      ws[phoneCell].t = 's';
-      ws[phoneCell].z = '@';
+    for (const colIdx of textColumns) {
+      const cellRef = XLSX.utils.encode_cell({ c: colIdx, r });
+      if (ws[cellRef]) {
+        ws[cellRef].t = 's';
+        ws[cellRef].z = '@';
+      }
     }
   }
 
@@ -100,20 +116,23 @@ export function exportToCSV(
   activeYear: string = '2026-2027'
 ) {
   const actualFilename = filename || `The_Educational_Centre_Fee_Ledger_${activeYear.replace('-', '_')}.csv`;
+  const currentMonthIndex = getCurrentAcademicMonthIndex();
+
   const headers = [
     'S#',
     'Class',
     'Roll No',
     'Student Name',
     'Father Name',
-    'Contact No (Phone)',
+    'Contact No 1 (Phone)',
+    'Contact No 2 (Phone)',
     'M. Fee (PKR)',
     ...ACADEMIC_MONTHS,
     'Total Outstanding (PKR)',
   ];
 
   const rows = students.map((student, idx) => {
-    const totals = calculateStudentTotals(student, 8, activeYear);
+    const totals = calculateStudentTotals(student, currentMonthIndex, activeYear);
     const monthAmounts = ACADEMIC_MONTHS.map((m) => getStudentMonthPaidAmount(student, m, activeYear));
     const sNo = student.serialNo ? formatSerialNo(student.serialNo) : formatSerialNo(student.id, idx + 1);
 
@@ -124,6 +143,7 @@ export function exportToCSV(
       `"${student.studentName}"`,
       `"${student.fatherName}"`,
       formatContactForCSV(student.contactNo),
+      formatContactForCSV(student.contactNo2),
       student.monthlyFee,
       ...monthAmounts,
       totals.totalOutstanding,
@@ -148,6 +168,7 @@ export function printFeeLedger(
   activeYear: string = '2026-2027'
 ) {
   const actualTitle = title || `The Educational Centre Secondary School - Fee Ledger ${activeYear}`;
+  const currentMonthIndex = getCurrentAcademicMonthIndex();
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
     alert('Please allow popups to print the fee ledger.');
@@ -156,7 +177,7 @@ export function printFeeLedger(
 
   const rowsHtml = students
     .map((s, idx) => {
-      const totals = calculateStudentTotals(s, 8, activeYear);
+      const totals = calculateStudentTotals(s, currentMonthIndex, activeYear);
       const statusMap = getEffectiveMonthlyStatus(s, activeYear);
       const sNo = s.serialNo ? formatSerialNo(s.serialNo) : formatSerialNo(s.id, idx + 1);
       return `<tr>
@@ -164,7 +185,7 @@ export function printFeeLedger(
         <td style="border:1px solid #ddd;padding:6px;"><strong>${s.className}</strong></td>
         <td style="border:1px solid #ddd;padding:6px;">${s.studentName}</td>
         <td style="border:1px solid #ddd;padding:6px;">${s.fatherName}</td>
-        <td style="border:1px solid #ddd;padding:6px;font-family:monospace;">${formatPhoneDisplay(s.contactNo)}</td>
+        <td style="border:1px solid #ddd;padding:6px;font-family:monospace;">${formatPhoneDisplay(s.contactNo)}${s.contactNo2 ? `<br/>${formatPhoneDisplay(s.contactNo2)}` : ''}</td>
         <td style="border:1px solid #ddd;padding:6px;text-align:right;">Rs. ${s.monthlyFee.toLocaleString()}</td>
         ${ACADEMIC_MONTHS.map((m) => {
           const st = statusMap[m] || 'pending';

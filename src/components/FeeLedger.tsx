@@ -21,59 +21,40 @@ import {
   Pencil,
   Trash2,
   Upload,
+  RefreshCw,
 } from 'lucide-react';
 
-// Custom Hook to fetch Invoices from API
-export const useInvoices = (year?: string) => {
+// Custom Hook to fetch Invoices from API, filtered by academic year
+export const useInvoices = (academicYear?: string) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refetchTrigger, setRefetchTrigger] = useState(0);
 
   useEffect(() => {
+    let isMounted = true;
     const fetchInvoices = async () => {
       setLoading(true);
       try {
-        // Extract start year e.g. "2026-2027" -> "2026"
-        const startYear = year ? year.split('-')[0] : undefined;
-        const url = startYear ? `/api/invoices?year=${startYear}` : '/api/invoices';
-        const res = await fetch(url);
+        const url = academicYear ? `/api/invoices?academicYear=${academicYear}` : '/api/invoices';
+        const res = await fetch(url, { credentials: 'include' });
         const data = await res.json();
-        setInvoices(Array.isArray(data) ? data : []);
+        if (isMounted) setInvoices(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error('Error fetching invoices:', err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchInvoices();
-  }, [year]);
+    return () => {
+      isMounted = false;
+    };
+  }, [academicYear, refetchTrigger]);
 
-  return { invoices, loading };
-};
+  const refetch = () => setRefetchTrigger((t) => t + 1);
 
-// Helper to convert AcademicMonth into YYYY-MM-01 string based on academic session
-const getMonthYearString = (month: AcademicMonth, academicYear: string): string => {
-  const [startYearStr] = academicYear.split('-');
-  const startYear = parseInt(startYearStr, 10) || 2026;
-  const endYear = startYear + 1;
-
-  const monthMap: Record<AcademicMonth, { monthNum: string; year: number }> = {
-    Jun: { monthNum: '06', year: startYear },
-    Jul: { monthNum: '07', year: startYear },
-    Aug: { monthNum: '08', year: startYear },
-    Sep: { monthNum: '09', year: startYear },
-    Oct: { monthNum: '10', year: startYear },
-    Nov: { monthNum: '11', year: startYear },
-    Dec: { monthNum: '12', year: startYear },
-    Jan: { monthNum: '01', year: endYear },
-    Feb: { monthNum: '02', year: endYear },
-    Mar: { monthNum: '03', year: endYear },
-    Apr: { monthNum: '04', year: endYear },
-    May: { monthNum: '05', year: endYear },
-  };
-
-  const target = monthMap[month] || { monthNum: '01', year: startYear };
-  return `${target.year}-${target.monthNum}-01`;
+  return { invoices, loading, refetch };
 };
 
 interface Props {
@@ -108,21 +89,50 @@ export const FeeLedger: React.FC<Props> = ({
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [internalActiveMonth, setInternalActiveMonth] = useState<AcademicMonth>('Feb');
+  const [internalActiveMonth, setInternalActiveMonth] = useState<AcademicMonth>('Jun');
   const [cellDisplayMode, setCellDisplayMode] = useState<'both' | 'amounts' | 'status'>('both');
   const [sortField, setSortField] = useState<'id' | 'className' | 'studentName' | 'collected' | 'total'>('id');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
 
-  // Fetch Invoices from API
-  const { invoices } = useInvoices(activeAcademicYear);
+  // Fetch Invoices from API for the active academic year
+  const { invoices, refetch: refetchInvoices } = useInvoices(activeAcademicYear);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateMessage, setGenerateMessage] = useState<string | null>(null);
 
-  // Quick lookup map: studentId_YYYY-MM-01 -> Invoice
+  const handleGenerateInvoices = async () => {
+    setIsGenerating(true);
+    setGenerateMessage(null);
+    try {
+      const res = await fetch('/api/fees/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ academicYear: activeAcademicYear, month: activeReminderMonth }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setGenerateMessage(`⚠️ ${data.error || 'Failed to generate invoices.'}`);
+      } else {
+        setGenerateMessage(`✅ ${data.message}`);
+        refetchInvoices();
+      }
+    } catch (err) {
+      console.error('Generate invoices failed:', err);
+      setGenerateMessage('⚠️ Network error while generating invoices.');
+    } finally {
+      setIsGenerating(false);
+      setTimeout(() => setGenerateMessage(null), 5000);
+    }
+  };
+
+    const activeReminderMonth = activeMonth || internalActiveMonth;
+
+
+  // Quick lookup map: "studentId_month" -> Invoice (e.g. "1000_Sep")
   const invoiceMap = useMemo(() => {
     const map = new Map<string, Invoice>();
     invoices.forEach((inv) => {
-      // Ensure month_year is formatted YYYY-MM-01
-      const formattedMonth = inv.month_year.slice(0, 10);
-      map.set(`${inv.student_id}_${formattedMonth}`, inv);
+      map.set(`${inv.studentId}_${inv.month}`, inv);
     });
     return map;
   }, [invoices]);
@@ -153,7 +163,6 @@ export const FeeLedger: React.FC<Props> = ({
   };
 
   // Active month synchronization
-  const activeReminderMonth = activeMonth || internalActiveMonth;
   const handleActiveMonthChange = (m: AcademicMonth) => {
     if (onActiveMonthChange) {
       onActiveMonthChange(m);
@@ -175,8 +184,8 @@ export const FeeLedger: React.FC<Props> = ({
         }
 
         if (selectedStatus !== 'ALL') {
-          const statusMap = getEffectiveMonthlyStatus(s, activeAcademicYear);
-          const currentStatus = statusMap[activeReminderMonth];
+          const inv = invoiceMap.get(`${s.id}_${activeReminderMonth}`);
+          const currentStatus = inv ? (inv.status === 'unpaid' ? 'pending' : inv.status) : 'pending';
           if (currentStatus !== selectedStatus) {
             return false;
           }
@@ -228,9 +237,9 @@ export const FeeLedger: React.FC<Props> = ({
         }
         return 0;
       });
-  }, [students, selectedClass, selectedStatus, searchQuery, activeReminderMonth, sortField, sortAsc, activeAcademicYear, activeMonthIndex]);
+  }, [students, selectedClass, selectedStatus, searchQuery, activeReminderMonth, sortField, sortAsc, activeAcademicYear, activeMonthIndex, invoiceMap]);
 
-  // Aggregate totals for the filtered ledger up to active month computed from DB invoices
+  // Aggregate totals for the filtered ledger up to active month, computed from DB invoices
   const ledgerTotals = useMemo(() => {
     let billed = 0;
     let collected = 0;
@@ -238,22 +247,19 @@ export const FeeLedger: React.FC<Props> = ({
     let fullClearCount = 0;
     let overdueCount = 0;
 
-    const filteredStudentIds = new Set(filteredStudents.map((s) => s.id));
-
     filteredStudents.forEach((student) => {
       let studentDue = 0;
       visibleMonths.forEach((m) => {
-        const dateStr = getMonthYearString(m, activeAcademicYear);
-        const inv = invoiceMap.get(`${student.id}_${dateStr}`);
+        const inv = invoiceMap.get(`${student.id}_${m}`);
         if (inv) {
-          const invBilled = inv.net_due;
-          const invPaid = inv.paid_amount;
-          billed += invBilled;
-          collected += invPaid;
-          const invDue = Math.max(0, invBilled - invPaid);
+          billed += inv.netDue;
+          collected += inv.paidAmount;
+          const invDue = Math.max(0, inv.netDue - inv.paidAmount);
           due += invDue;
           studentDue += invDue;
         } else {
+          // No invoice generated yet for this month — fall back to the flat rate
+          // so the ledger still shows a sensible number before generation runs.
           const net = Math.max(0, (student.monthlyFee || 0) - (student.discount || 0));
           billed += net;
           due += net;
@@ -267,7 +273,7 @@ export const FeeLedger: React.FC<Props> = ({
 
     const rate = billed > 0 ? Math.round((collected / billed) * 100) : 0;
     return { billed, collected, due, fullClearCount, overdueCount, rate };
-  }, [filteredStudents, visibleMonths, activeAcademicYear, invoiceMap]);
+  }, [filteredStudents, visibleMonths, invoiceMap]);
 
   interface GroupTotals {
     monthlyFee: number;
@@ -278,27 +284,17 @@ export const FeeLedger: React.FC<Props> = ({
     totalDue: number;
   }
 
-  const computeTotalsForStudents = (
-    studentList: StudentRecord[]
-  ): GroupTotals => {
+  const computeTotalsForStudents = (studentList: StudentRecord[]): GroupTotals => {
     let monthlyFee = 0;
     let discounts = 0;
     let totalCollected = 0;
     let totalDue = 0;
 
     const monthsMap: Record<AcademicMonth, { collected: number; due: number }> = {
-      Jun: { collected: 0, due: 0 },
-      Jul: { collected: 0, due: 0 },
-      Aug: { collected: 0, due: 0 },
-      Sep: { collected: 0, due: 0 },
-      Oct: { collected: 0, due: 0 },
-      Nov: { collected: 0, due: 0 },
-      Dec: { collected: 0, due: 0 },
-      Jan: { collected: 0, due: 0 },
-      Feb: { collected: 0, due: 0 },
-      Mar: { collected: 0, due: 0 },
-      Apr: { collected: 0, due: 0 },
-      May: { collected: 0, due: 0 },
+      Jun: { collected: 0, due: 0 }, Jul: { collected: 0, due: 0 }, Aug: { collected: 0, due: 0 },
+      Sep: { collected: 0, due: 0 }, Oct: { collected: 0, due: 0 }, Nov: { collected: 0, due: 0 },
+      Dec: { collected: 0, due: 0 }, Jan: { collected: 0, due: 0 }, Feb: { collected: 0, due: 0 },
+      Mar: { collected: 0, due: 0 }, Apr: { collected: 0, due: 0 }, May: { collected: 0, due: 0 },
     };
 
     studentList.forEach((s) => {
@@ -306,15 +302,13 @@ export const FeeLedger: React.FC<Props> = ({
       discounts += s.discount || 0;
 
       visibleMonths.forEach((m) => {
-        const dateStr = getMonthYearString(m, activeAcademicYear);
-        const inv = invoiceMap.get(`${s.id}_${dateStr}`);
-
+        const inv = invoiceMap.get(`${s.id}_${m}`);
         let paid = 0;
         let due = 0;
 
         if (inv) {
-          paid = Number(inv.paid_amount) || 0;
-          due = Math.max(0, Number(inv.net_due) - paid);
+          paid = inv.paidAmount;
+          due = Math.max(0, inv.netDue - paid);
         } else {
           const netFee = Math.max(0, (s.monthlyFee || 0) - (s.discount || 0));
           paid = s.monthlyAmountsPaid?.[m] || 0;
@@ -365,11 +359,11 @@ export const FeeLedger: React.FC<Props> = ({
     });
 
     return groups;
-  }, [filteredStudents, visibleMonths, activeAcademicYear, invoiceMap]);
+  }, [filteredStudents, visibleMonths, invoiceMap]);
 
   const overallTotals = useMemo<GroupTotals>(() => {
     return computeTotalsForStudents(filteredStudents);
-  }, [filteredStudents, visibleMonths, activeAcademicYear, invoiceMap]);
+  }, [filteredStudents, visibleMonths, invoiceMap]);
 
   const handleSort = (field: 'id' | 'className' | 'studentName' | 'collected' | 'total') => {
     if (sortField === field) {
@@ -402,10 +396,7 @@ export const FeeLedger: React.FC<Props> = ({
 
       if (isEditing) {
         return (
-          <div
-            className="inline-block relative z-10"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="inline-block relative z-10" onClick={(e) => e.stopPropagation()}>
             <input
               type="number"
               min="0"
@@ -537,6 +528,15 @@ export const FeeLedger: React.FC<Props> = ({
 
           <div className="flex items-center gap-2">
             <button
+              onClick={handleGenerateInvoices}
+              disabled={isGenerating}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+              title={`Generate invoices for ${activeReminderMonth} (${activeAcademicYear}) using the current fee schedule`}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-white ${isGenerating ? 'animate-spin' : ''}`} />
+              {isGenerating ? 'Generating...' : `Generate ${activeReminderMonth} Invoices`}
+            </button>
+            <button
               onClick={onOpenImport}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
               title="Import student records and monthly fee amounts from Excel (.xlsx, .csv)"
@@ -552,7 +552,12 @@ export const FeeLedger: React.FC<Props> = ({
               Enroll Student
             </button>
           </div>
-        </div>
+        {generateMessage && (
+          <div className="text-xs font-medium px-3 py-2 rounded-lg bg-neutral-50 border border-neutral-200 text-neutral-700">
+            {generateMessage}
+          </div>
+        )}
+        </div>        
 
         {/* Dynamic Filters Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-neutral-100">
@@ -824,7 +829,6 @@ export const FeeLedger: React.FC<Props> = ({
                     return (
                       <React.Fragment key={group.className}>
                         {group.students.map((student) => {
-                          const statusMap = getEffectiveMonthlyStatus(student, activeAcademicYear);
                           const globalIdx = filteredStudents.indexOf(student);
                           const displaySNo = student.serialNo
                             ? formatSerialNo(student.serialNo)
@@ -836,12 +840,10 @@ export const FeeLedger: React.FC<Props> = ({
                           let studentOverdueCount = 0;
 
                           visibleMonths.forEach((m) => {
-                            const dateStr = getMonthYearString(m, activeAcademicYear);
-                            const inv = invoiceMap.get(`${student.id}_${dateStr}`);
+                            const inv = invoiceMap.get(`${student.id}_${m}`);
                             if (inv) {
-                              const paid = Number(inv.paid_amount) || 0;
-                              const dueAmt = Math.max(0, Number(inv.net_due) - paid);
-                              studentCollected += paid;
+                              const dueAmt = Math.max(0, inv.netDue - inv.paidAmount);
+                              studentCollected += inv.paidAmount;
                               studentDue += dueAmt;
                               if (dueAmt > 0) studentOverdueCount++;
                             } else {
@@ -888,6 +890,11 @@ export const FeeLedger: React.FC<Props> = ({
 
                               <td className="py-2.5 px-3 font-mono text-neutral-600 text-[11px] whitespace-nowrap">
                                 {formatPhoneDisplay(student.contactNo)}
+                                {student.contactNo2 && (
+                                  <span className="block text-neutral-400">
+                                    {formatPhoneDisplay(student.contactNo2)}
+                                  </span>
+                                )}
                               </td>
 
                               <td className="py-2.5 px-3 text-right font-semibold text-neutral-800 whitespace-nowrap">
@@ -900,15 +907,14 @@ export const FeeLedger: React.FC<Props> = ({
                               </td>
 
                               {visibleMonths.map((m) => {
-                                const dateStr = getMonthYearString(m, activeAcademicYear);
-                                const inv = invoiceMap.get(`${student.id}_${dateStr}`);
-                                const paidAmount = inv 
-                                  ? Number(inv.paid_amount) 
+                                const inv = invoiceMap.get(`${student.id}_${m}`);
+                                const paidAmount = inv
+                                  ? inv.paidAmount
                                   : (student.monthlyAmountsPaid?.[m] || 0);
 
-                                const currentStatus = inv 
+                                const currentStatus: PaymentStatus = inv
                                   ? (inv.status === 'paid' ? 'paid' : inv.status === 'partial' ? 'partial' : 'pending')
-                                  : (statusMap[m] || 'pending');
+                                  : (getEffectiveMonthlyStatus(student, activeAcademicYear)[m] || 'pending');
 
                                 return (
                                   <td

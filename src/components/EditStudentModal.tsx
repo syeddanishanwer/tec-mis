@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
-import { SchoolClass, StudentRecord } from '../types';
+import { SchoolClass, StudentRecord, AcademicMonth, ACADEMIC_MONTHS } from '../types';
 import { ALL_CLASSES, formatPhoneDisplay } from '../data/mockStudents';
 import { UserCheck, X, Hash } from 'lucide-react';
 
 interface Props {
   student: StudentRecord;
+  activeAcademicYear?: string;
   onClose: () => void;
   onSaveStudent: (updatedStudent: StudentRecord) => void;
 }
 
-export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStudent }) => {
+export const EditStudentModal: React.FC<Props> = ({
+  student,
+  activeAcademicYear = '2026-2027',
+  onClose,
+  onSaveStudent,
+}) => {
   const [serialNo, setSerialNo] = useState<string>(student.serialNo || String(student.id).padStart(3, '0'));
   const [studentName, setStudentName] = useState<string>(student.studentName);
   const [fatherName, setFatherName] = useState<string>(student.fatherName);
@@ -20,7 +26,7 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
 
   // Fee-schedule fields (drives student_fee_schedules via /api/fees/schedule)
   const [newFeeAmount, setNewFeeAmount] = useState<number>(student.monthlyFee);
-  const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [effectiveFromMonth, setEffectiveFromMonth] = useState<AcademicMonth>('Sep');
   const [isSaving, setIsSaving] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
 
@@ -31,20 +37,16 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
     // Avoid creating no-op schedule rows if neither fee nor discount changed
     if (!hasFeeChanged && !hasDiscountChanged) return;
 
-    // Format date to 1st of the month (YYYY-MM-01) for Postgres DATE matching
-    const formattedEffectiveFrom = effectiveFrom.length >= 7 
-      ? `${effectiveFrom.slice(0, 7)}-01` 
-      : effectiveFrom;
-
     const res = await fetch('/api/fees/schedule', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
         studentId: student.id,
-        baseAmount: Math.max(0, Number(newFeeAmount)),
+        monthlyFee: Math.max(0, Number(newFeeAmount)),
         concession: Math.max(0, Number(discount)),
-        effectiveFrom: formattedEffectiveFrom,
+        effectiveFromMonth,
+        academicYear: student.academicYear || activeAcademicYear,
       }),
     });
 
@@ -62,13 +64,13 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
     setIsSaving(true);
 
     try {
-      // Record the fee change (if any) in student_fee_schedules first.
+      // Record the fee change (if any) in student_fee_schedules first
       await handleFeeScheduleUpdate();
     } catch (err: any) {
       console.error('Fee schedule update failed:', err);
       setScheduleError(err.message || 'Could not save the new fee schedule. Please try again.');
       setIsSaving(false);
-      return; // Don't proceed with the rest of the save if the schedule write failed
+      return;
     }
 
     // Standardize serial number if numeric (e.g. '1' -> '001', '02' -> '002')
@@ -84,9 +86,10 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
       fatherName: fatherName.trim(),
       className,
       contactNo: contactNo.trim(),
-      monthlyFee: Math.max(0, Number(newFeeAmount)), // Pass updated fee amount
+      monthlyFee: Math.max(0, Number(newFeeAmount)),
       discount: Math.max(0, Number(discount)),
       rollNo: rollNo.trim(),
+      academicYear: student.academicYear || activeAcademicYear,
     });
 
     setIsSaving(false);
@@ -105,7 +108,7 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
             <div>
               <h3 className="font-bold text-base leading-tight">Edit Student Record</h3>
               <p className="text-xs text-neutral-400">
-                Update S#, Class, Names, Contact, and Monthly Fee (M. FEE)
+                Update S#, Class, Names, Contact, and Monthly Fee Schedule
               </p>
             </div>
           </div>
@@ -119,12 +122,12 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* S# (Serial No) and Class */}
+          {/* S# (Serial No), Class & Roll No */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-neutral-700 mb-1">
                 <Hash className="w-3 h-3 inline mr-1 text-neutral-500" />
-                S# (e.g. 001, 002) *
+                S# (e.g. 001) *
               </label>
               <input
                 type="text"
@@ -135,7 +138,7 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
                 className="w-full text-sm font-mono font-bold border border-neutral-300 rounded-lg p-2.5 focus:ring-2 focus:ring-neutral-900 focus:outline-none bg-neutral-50"
                 required
               />
-              <span className="text-[10px] text-neutral-400">Manual register index</span>
+              <span className="text-[10px] text-neutral-400">Register index</span>
             </div>
 
             <div>
@@ -217,7 +220,7 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
             </p>
           </div>
 
-          {/* New Fee + Effective From (writes to student_fee_schedules) */}
+          {/* New Fee + Effective From Month dropdown */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-neutral-700 mb-1">
@@ -233,14 +236,19 @@ export const EditStudentModal: React.FC<Props> = ({ student, onClose, onSaveStud
                 required
               />
               <label className="block text-[11px] font-semibold text-neutral-500 mt-2 mb-1">
-                Effective From
+                Effective From Month *
               </label>
-              <input
-                type="date"
-                value={effectiveFrom}
-                onChange={(e) => setEffectiveFrom(e.target.value)}
-                className="w-full text-xs border border-neutral-300 rounded-lg p-2 focus:ring-2 focus:ring-neutral-900 focus:outline-none"
-              />
+              <select
+                value={effectiveFromMonth}
+                onChange={(e) => setEffectiveFromMonth(e.target.value as AcademicMonth)}
+                className="w-full text-xs font-medium border border-neutral-300 rounded-lg p-2 focus:ring-2 focus:ring-neutral-900 focus:outline-none bg-neutral-50"
+              >
+                {ACADEMIC_MONTHS.map((m) => (
+                  <option key={m} value={m}>
+                    {m} (Academic Month)
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-neutral-700 mb-1">

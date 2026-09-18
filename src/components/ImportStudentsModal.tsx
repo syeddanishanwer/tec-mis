@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { StudentRecord, AcademicMonth, ACADEMIC_MONTHS, PaymentStatus } from '../types';
+import { StudentRecord } from '../types';
 import { parseExcelOrCsvFile, downloadSampleImportTemplate, ParsedImportRow } from '../utils/importHelpers';
 import { formatPhoneDisplay } from '../data/mockStudents';
+import { ACADEMIC_MONTHS } from '../types';
 import {
   Upload,
   FileSpreadsheet,
@@ -103,17 +104,16 @@ export const ImportStudentsModal: React.FC<Props> = ({
     }
   };
 
-  // Commit imported rows
+  // Commit imported rows to API payload
   const handleCommitImport = () => {
     if (parsedValidRows.length === 0) return;
 
-    // Convert parsed rows to StudentRecord objects
     let nextId = Math.max(0, ...existingStudents.map((s) => s.id)) + 1;
     let updatedCount = 0;
     let addedCount = 0;
 
-    const newStudentRecords: StudentRecord[] = parsedValidRows.map((row) => {
-      // Check if student exists in existing register
+    const newStudentRecords: (StudentRecord & { feeChanges?: any[] })[] = parsedValidRows.map((row) => {
+      // Check if student exists in current register
       const existingMatch = existingStudents.find(
         (s) =>
           (row.rollNo && s.rollNo && s.rollNo.trim().toLowerCase() === row.rollNo.trim().toLowerCase()) ||
@@ -130,7 +130,6 @@ export const ImportStudentsModal: React.FC<Props> = ({
 
       const recordId = strategy === 'update_or_add' && existingMatch ? existingMatch.id : nextId++;
 
-      // Create amounts paid map and status map
       const monthlyStatus = { ...row.monthlyStatuses };
       const monthlyAmountsPaid = { ...row.monthlyAmounts };
 
@@ -142,8 +141,10 @@ export const ImportStudentsModal: React.FC<Props> = ({
         fatherName: row.fatherName,
         className: row.className,
         contactNo: row.contactNo,
+        contactNo2: row.contactNo2, // FIXED: Preserved secondary phone number
         monthlyFee: row.monthlyFee,
         discount: row.discount || 0,
+        feeChanges: row.feeChanges || [], // FIXED: Preserved dynamic fee changes (slots 1-3)
         academicYear: targetYear,
         admissionDate: existingMatch ? existingMatch.admissionDate : new Date().toISOString().split('T')[0],
         monthlyStatus,
@@ -160,7 +161,7 @@ export const ImportStudentsModal: React.FC<Props> = ({
     });
 
     onImportSuccess(
-      newStudentRecords,
+      newStudentRecords as StudentRecord[],
       strategy,
       {
         total: parsedValidRows.length,
@@ -251,7 +252,7 @@ export const ImportStudentsModal: React.FC<Props> = ({
                     <span className="text-neutral-900 underline font-bold">browse</span>
                   </p>
                   <p className="text-xs text-neutral-500 mt-1">
-                    Columns: S#, Class, Roll No, Student Name, Father Name, Contact No, Monthly Fee (PKR), Jun..May (fees in amounts)
+                    Columns: S#, Class, Roll No, Student Name, Father Name, Contact No 1 & 2, Monthly Fee (PKR), New Fee 1-3 & Effective Months, Jun..May
                   </p>
                 </div>
               )}
@@ -342,7 +343,7 @@ export const ImportStudentsModal: React.FC<Props> = ({
           {parsedValidRows.length > 0 && (
             <div className="border border-neutral-200 rounded-lg overflow-hidden">
               <div className="bg-neutral-100 px-3 py-2 border-b border-neutral-200 flex items-center justify-between text-xs font-semibold text-neutral-700">
-                <span>Spreadsheet Data Preview (Plugged Into Existing Columns)</span>
+                <span>Spreadsheet Data Preview</span>
                 <span className="text-[11px] text-neutral-500 font-normal">
                   Showing {parsedValidRows.length} rows
                 </span>
@@ -356,7 +357,8 @@ export const ImportStudentsModal: React.FC<Props> = ({
                       <th className="py-2 px-2">Roll No</th>
                       <th className="py-2 px-2">Student Name</th>
                       <th className="py-2 px-2">Father Name</th>
-                      <th className="py-2 px-2">Contact No</th>
+                      <th className="py-2 px-2">Contact No 1</th>
+                      <th className="py-2 px-2">Contact No 2</th>
                       <th className="py-2 px-2 text-right">M. Fee</th>
                       {ACADEMIC_MONTHS.map((m) => (
                         <th key={m} className="py-2 px-1 text-center min-w-[55px]">
@@ -385,6 +387,9 @@ export const ImportStudentsModal: React.FC<Props> = ({
                         </td>
                         <td className="py-2 px-2 font-mono text-[11px] text-neutral-600 whitespace-nowrap">
                           {formatPhoneDisplay(row.contactNo)}
+                        </td>
+                        <td className="py-2 px-2 font-mono text-[11px] text-neutral-500 whitespace-nowrap">
+                          {row.contactNo2 ? formatPhoneDisplay(row.contactNo2) : '—'}
                         </td>
                         <td className="py-2 px-2 text-right font-semibold text-neutral-800 whitespace-nowrap">
                           Rs. {row.monthlyFee.toLocaleString()}
