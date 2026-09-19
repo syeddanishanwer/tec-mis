@@ -5,6 +5,7 @@ import { CreditCard, X, CheckCircle2 } from 'lucide-react';
 interface Props {
   student: StudentRecord;
   activeAcademicYear?: string;
+  activeMonth?: AcademicMonth;
   onClose: () => void;
   onSavePayment: (
     studentId: number,
@@ -16,53 +17,36 @@ interface Props {
   ) => void;
 }
 
-// Helper to convert short academic month string into standard YYYY-MM-01 ISO date
-const getMonthYearDateString = (month: AcademicMonth, academicYear: string): string => {
-  const [startYearStr, endYearStr] = academicYear.split('-');
-  const startYear = parseInt(startYearStr, 10);
-  const endYear = parseInt(endYearStr, 10) || startYear + 1;
-
-  const monthMap: Record<AcademicMonth, { monthNum: string; year: number }> = {
-    Jun: { monthNum: '06', year: startYear },
-    Jul: { monthNum: '07', year: startYear },
-    Aug: { monthNum: '08', year: startYear },
-    Sep: { monthNum: '09', year: startYear },
-    Oct: { monthNum: '10', year: startYear },
-    Nov: { monthNum: '11', year: startYear },
-    Dec: { monthNum: '12', year: startYear },
-    Jan: { monthNum: '01', year: endYear },
-    Feb: { monthNum: '02', year: endYear },
-    Mar: { monthNum: '03', year: endYear },
-    Apr: { monthNum: '04', year: endYear },
-    May: { monthNum: '05', year: endYear },
-  };
-
-  const target = monthMap[month] || { monthNum: '01', year: startYear };
-  return `${target.year}-${target.monthNum}-01`;
-};
-
 export const RecordPaymentModal: React.FC<Props> = ({
   student,
   activeAcademicYear = '2026-2027',
+  activeMonth,
   onClose,
   onSavePayment,
 }) => {
-  const [selectedMonth, setSelectedMonth] = useState<AcademicMonth>('Feb');
+  const [selectedMonth, setSelectedMonth] = useState<AcademicMonth>(activeMonth || 'Jun');
   const [amount, setAmount] = useState<number>(student.monthlyFee - student.discount);
   const [status, setStatus] = useState<PaymentStatus>('paid');
   const [method, setMethod] = useState<'Cash' | 'Bank Transfer' | 'Online/EasyPaisa/JazzCash'>('Cash');
   const [receiptNo] = useState<string>('REC-' + Math.floor(100000 + Math.random() * 900000));
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handlePaymentSubmit = async (studentId: number, monthYear: string, paidAmount: number) => {
+  const handlePaymentSubmit = async (
+    studentId: number,
+    month: AcademicMonth,
+    academicYear: string,
+    paidAmount: number
+  ) => {
     const res = await fetch('/api/fees/record-payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({
         studentId,
-        monthYear, // Format: 'YYYY-MM-01'
+        month,
+        academicYear,
         paidAmount,
       }),
     });
@@ -79,12 +63,10 @@ export const RecordPaymentModal: React.FC<Props> = ({
     setIsSubmitting(true);
 
     try {
-      const monthYearDate = getMonthYearDateString(selectedMonth, activeAcademicYear);
-      
-      // Post payment record to database endpoint
-      await handlePaymentSubmit(student.id, monthYearDate, amount);
+      // Post payment record to database endpoint (updates the real invoices table)
+      await handlePaymentSubmit(student.id, selectedMonth, activeAcademicYear, amount);
 
-      // Trigger local application state update
+      // Trigger local application state update (legacy JSON mirror, kept for now)
       onSavePayment(student.id, selectedMonth, amount, status, method, receiptNo);
       onClose();
     } catch (err: any) {

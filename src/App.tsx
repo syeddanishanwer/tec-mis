@@ -184,11 +184,36 @@ export default function App() {
     }
   };
 
+  // Sync a single month's payment to the real invoices table
+  const syncPaymentToInvoice = async (studentId: number, month: AcademicMonth, paidAmount: number) => {
+    try {
+      const res = await fetch('/api/fees/record-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          studentId,
+          month,
+          academicYear: selectedAcademicYear,
+          paidAmount,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('Invoice payment sync failed:', err);
+        showToast(`⚠️ Ledger updated locally, but invoice sync failed: ${err.error || res.status}`);
+      }
+    } catch (err) {
+      console.error('Invoice payment sync network error:', err);
+      showToast('⚠️ Ledger updated locally, but invoice sync had a network error.');
+    }
+  };
+
   // 2. BULK SAVE STUDENTS (POST)
   const syncBulkStudentsToBackend = async (studentList: StudentRecord[], targetYear?: string, replace?: boolean) => {
     setIsSyncing(true);
     try {
-      await fetch(replace ? '/api/students-replace' : '/api/students', {
+      const res = await fetch(replace ? '/api/students-replace' : '/api/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -197,8 +222,14 @@ export default function App() {
           academicYear: targetYear || selectedAcademicYear,
         }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(`⚠️ Import failed to save: ${err.error || res.status}`);
+        console.error('Bulk sync failed:', err);
+      }
     } catch (err) {
       console.error('Failed to sync bulk students with backend database:', err);
+      showToast('⚠️ Network error during import.');
     } finally {
       setIsSyncing(false);
     }
@@ -251,6 +282,7 @@ export default function App() {
   const handleToggleMonthStatus = (studentId: number, month: AcademicMonth) => {
     let newStatus: PaymentStatus = 'paid';
     let updatedStudentObj: StudentRecord | null = null;
+    let finalAmount = 0;
 
     setStudents((prev) =>
       prev.map((s) => {
@@ -272,6 +304,7 @@ export default function App() {
 
         const currentAmounts = getEffectiveMonthlyAmounts(s, selectedAcademicYear);
         const updatedAmounts = { ...currentAmounts, [month]: nextAmount };
+        finalAmount = nextAmount;
 
         updatedStudentObj = {
           ...s,
@@ -285,7 +318,10 @@ export default function App() {
       })
     );
 
-    if (updatedStudentObj) syncStudentToBackend(updatedStudentObj);
+    if (updatedStudentObj) {
+      syncStudentToBackend(updatedStudentObj);
+      syncPaymentToInvoice(studentId, month, finalAmount);
+    }
     showToast(`Updated ${month} status to ${newStatus} (${selectedAcademicYear})`);
   };
 
@@ -323,7 +359,10 @@ export default function App() {
       })
     );
 
-    if (updatedStudentObj) syncStudentToBackend(updatedStudentObj);
+    if (updatedStudentObj) {
+      syncStudentToBackend(updatedStudentObj);
+      syncPaymentToInvoice(studentId, month, validAmount);
+    }
     showToast(`Updated ${month} fee for ${studentName || 'student'} to Rs. ${validAmount.toLocaleString()} (${selectedAcademicYear})`);
   };
 
@@ -384,15 +423,26 @@ export default function App() {
   };
 
   // Delete student handler
-  const handleConfirmDeleteStudent = (studentId: number) => {
+  const handleConfirmDeleteStudent = async (studentId: number) => {
     const target = students.find((s) => s.id === studentId);
     setStudents((prev) => prev.filter((s) => s.id !== studentId));
 
-    fetch(`/api/students?id=${studentId}`, { method: 'DELETE' }).catch((err) =>
-      console.error('Failed to delete student from backend database:', err)
-    );
-
-    showToast(`Student ${target ? target.studentName : ''} deleted from school register.`);
+    try {
+      const res = await fetch(`/api/students?id=${studentId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(`⚠️ Delete failed to save: ${err.error || res.status}`);
+        console.error('Delete failed:', err);
+        return;
+      }
+      showToast(`Student ${target ? target.studentName : ''} deleted from school register.`);
+    } catch (err) {
+      console.error('Failed to delete student from backend database:', err);
+      showToast('⚠️ Network error while deleting student.');
+    }
   };
 
   // Import student records handler
@@ -729,6 +779,7 @@ export default function App() {
         <RecordPaymentModal
           student={paymentTarget}
           activeAcademicYear={selectedAcademicYear}
+          activeMonth={sharedActiveMonth}
           onClose={() => setPaymentTarget(null)}
           onSavePayment={handleSavePayment}
         />
