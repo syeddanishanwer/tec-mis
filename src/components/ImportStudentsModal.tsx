@@ -144,7 +144,9 @@ export const ImportStudentsModal: React.FC<Props> = ({
         contactNo2: row.contactNo2, // FIXED: Preserved secondary phone number
         monthlyFee: row.monthlyFee,
         discount: row.discount || 0,
-        feeChanges: row.feeChanges || [], // FIXED: Preserved dynamic fee changes (slots 1-3)
+        feeChanges: (row.feeChanges || []).filter(
+          (change) => change.newFee && Number(change.newFee) !== Number(row.monthlyFee)
+        ),
         academicYear: targetYear,
         admissionDate: existingMatch ? existingMatch.admissionDate : new Date().toISOString().split('T')[0],
         monthlyStatus,
@@ -215,13 +217,12 @@ export const ImportStudentsModal: React.FC<Props> = ({
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
-              isDragging
+            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${isDragging
                 ? 'border-emerald-500 bg-emerald-50/40 scale-[0.99]'
                 : file
-                ? 'border-neutral-300 bg-neutral-50/60'
-                : 'border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50/50'
-            }`}
+                  ? 'border-neutral-300 bg-neutral-50/60'
+                  : 'border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50/50'
+              }`}
           >
             <input
               type="file"
@@ -232,9 +233,8 @@ export const ImportStudentsModal: React.FC<Props> = ({
             />
             <div className="flex flex-col items-center justify-center gap-2">
               <div
-                className={`p-3 rounded-full ${
-                  file ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'
-                }`}
+                className={`p-3 rounded-full ${file ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'
+                  }`}
               >
                 <Upload className="w-6 h-6" />
               </div>
@@ -438,11 +438,10 @@ export const ImportStudentsModal: React.FC<Props> = ({
             type="button"
             onClick={handleCommitImport}
             disabled={parsedValidRows.length === 0 || isParsing}
-            className={`inline-flex items-center gap-2 text-xs font-bold px-5 py-2 rounded-lg shadow-xs transition-colors ${
-              parsedValidRows.length > 0 && !isParsing
+            className={`inline-flex items-center gap-2 text-xs font-bold px-5 py-2 rounded-lg shadow-xs transition-colors ${parsedValidRows.length > 0 && !isParsing
                 ? 'bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer'
                 : 'bg-neutral-300 text-neutral-500 cursor-not-allowed'
-            }`}
+              }`}
           >
             {isParsing ? (
               <>

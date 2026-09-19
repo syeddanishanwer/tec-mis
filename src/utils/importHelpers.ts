@@ -84,10 +84,10 @@ export function normalizeContactNumber(rawPhone: any, allowEmpty = false): strin
 }
 
 /**
- * Parses one fee-change slot's raw cell values into a validated FeeChange, or null if blank.
- * Pushes a warning if only one of the pair (fee / month) is filled in.
+ * Parses one fee-change slot's raw cell values into a validated FeeChange, or null if blank/unchanged.
  */
 function parseFeeChangeSlot(
+  monthlyFee: number,
   rawFee: any,
   rawMonth: any,
   slotNumber: number,
@@ -118,7 +118,14 @@ function parseFeeChangeSlot(
     return null;
   }
 
-  // Match month name against ACADEMIC_MONTHS (case-insensitive, allow full month names too)
+  const roundedFee = Math.round(parsedFee);
+
+  // Skip slot if the new fee is identical to the base monthly fee
+  if (roundedFee === monthlyFee) {
+    return null;
+  }
+
+  // Match month name against ACADEMIC_MONTHS
   const monthLower = monthStr.toLowerCase();
   const monthAliasMap: Record<string, AcademicMonth> = {
     jun: 'Jun', june: 'Jun',
@@ -143,7 +150,7 @@ function parseFeeChangeSlot(
     return null;
   }
 
-  return { newFee: Math.round(parsedFee), effectiveFromMonth: matchedMonth };
+  return { newFee: roundedFee, effectiveFromMonth: matchedMonth };
 }
 
 /**
