@@ -125,7 +125,7 @@ export const AddAcademicYearModal: React.FC<Props> = ({
                   Rollover Enrolled Students
                 </span>
                 <p className="text-[11px] text-neutral-500 mt-0.5 leading-normal">
-                  Initializes a fresh annual fee register for all existing students in the new session with monthly fee status set to pending.
+                  Initializes a fresh annual fee register for all existing students in the new session with monthly fee status set to unpaid.
                 </p>
               </div>
             </label>

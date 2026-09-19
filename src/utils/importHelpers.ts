@@ -125,7 +125,7 @@ function parseFeeChangeSlot(
     return null;
   }
 
-  // Match month name against ACADEMIC_MONTHS
+  // Match month name against ACADEMIC_MONTHS (case-insensitive, allow full month names too)
   const monthLower = monthStr.toLowerCase();
   const monthAliasMap: Record<string, AcademicMonth> = {
     jun: 'Jun', june: 'Jun',
@@ -248,9 +248,7 @@ export async function parseExcelOrCsvFile(
   const studentNameCol = findCol('student name', 'student', 'name', 'full name');
   const fatherNameCol = findCol('father name', 'father', 'parent', 'guardian');
 
-  // Contact No 1 — must match "contact no 1" before the generic "contact no" fallback
   const phoneCol = findCol('contact no 1 (phone)', 'contact no 1', 'contact 1', 'phone 1', 'contact no (phone)', 'contact no', 'phone', 'contact', 'mobile', 'whatsapp');
-  // Contact No 2 — optional secondary number
   const phoneCol2 = findCol('contact no 2 (phone)', 'contact no 2', 'contact 2', 'phone 2', 'second contact', 'alternate contact');
 
   const feeCol = findCol('monthly fee (pkr)', 'monthly fee', 'm. fee', 'm.fee', 'fee (pkr)', 'fee');
@@ -344,15 +342,15 @@ export async function parseExcelOrCsvFile(
       warnings.push("Father's Name missing; defaulted to Guardian");
     }
 
-    // 6. Contact No 1 (required, defaults to placeholder if missing)
+    // 6. Contact No 1
     const rawPhone = phoneCol !== -1 ? row[phoneCol] : '';
     const contactNo = normalizeContactNumber(rawPhone, false) as string;
 
-    // 6b. Contact No 2 (optional, stays undefined if blank)
+    // 6b. Contact No 2
     const rawPhone2 = phoneCol2 !== -1 ? row[phoneCol2] : '';
     const contactNo2 = normalizeContactNumber(rawPhone2, true);
 
-    // 7. Monthly Fee (PKR) — baseline rate, effective from Jun
+    // 7. Monthly Fee (PKR)
     let rawFee = feeCol !== -1 ? String(row[feeCol] || '').trim() : '';
     let monthlyFee = 5000;
     if (rawFee) {
@@ -365,26 +363,27 @@ export async function parseExcelOrCsvFile(
       }
     }
 
-    // 8. Fee change slots (1-3) — parse, then validate as a sequence
+    // 8. Fee change slots (1-3)
     const slot1 = parseFeeChangeSlot(
+      monthlyFee,
       newFeeCol1 !== -1 ? row[newFeeCol1] : '',
       effFromCol1 !== -1 ? row[effFromCol1] : '',
       1, warnings, errors
     );
     const slot2 = parseFeeChangeSlot(
+      monthlyFee,
       newFeeCol2 !== -1 ? row[newFeeCol2] : '',
       effFromCol2 !== -1 ? row[effFromCol2] : '',
       2, warnings, errors
     );
     const slot3 = parseFeeChangeSlot(
+      monthlyFee,
       newFeeCol3 !== -1 ? row[newFeeCol3] : '',
       effFromCol3 !== -1 ? row[effFromCol3] : '',
       3, warnings, errors
     );
     const feeChanges = validateFeeChangeSequence([slot1, slot2, slot3], errors);
 
-    // Build a per-month "fee that was actually billed that month" lookup,
-    // using the baseline fee and any confirmed fee changes in order.
     const feeForMonth = (month: AcademicMonth): number => {
       const monthIdx = ACADEMIC_MONTHS.indexOf(month);
       let activeFee = monthlyFee;
@@ -396,7 +395,7 @@ export async function parseExcelOrCsvFile(
       return activeFee;
     };
 
-    // 9. Monthly Paid Amounts and Statuses for Jun through May
+    // 9. Monthly Paid Amounts and Statuses
     const monthlyAmounts: Record<AcademicMonth, number> = {
       Jun: 0, Jul: 0, Aug: 0, Sep: 0, Oct: 0, Nov: 0,
       Dec: 0, Jan: 0, Feb: 0, Mar: 0, Apr: 0, May: 0,
@@ -408,7 +407,7 @@ export async function parseExcelOrCsvFile(
 
     ACADEMIC_MONTHS.forEach((m) => {
       const colIdx = monthCols[m];
-      const expectedFee = feeForMonth(m); // the fee actually active in this month, not a flat guess
+      const expectedFee = feeForMonth(m);
 
       if (colIdx !== -1 && row[colIdx] !== undefined && row[colIdx] !== null && String(row[colIdx]).trim() !== '') {
         const rawVal = row[colIdx];
@@ -485,10 +484,7 @@ export async function parseExcelOrCsvFile(
 }
 
 /**
- * Downloads a sample Excel file matching the current template:
- * S# | Class | Roll No | Student Name | Father Name | Contact No 1 | Contact No 2 |
- * Monthly Fee (PKR) | New Fee 1 | Effective From 1 | New Fee 2 | Effective From 2 |
- * New Fee 3 | Effective From 3 | Jun..May
+ * Downloads a sample Excel file matching the current template
  */
 export function downloadSampleImportTemplate(): void {
   const headers = [
@@ -521,8 +517,6 @@ export function downloadSampleImportTemplate(): void {
   ];
 
   const sampleRows = [
-    // Row 1: demonstrates TWO fee changes in one year (Sep, then Nov) — matches the real
-    // multi-change scenario this template is built to support.
     [
       '001', 'Class X', 'ETC-1001', 'Muhammad Hamza', 'Tariq Mehmood',
       '03001234567', '',
@@ -532,7 +526,6 @@ export function downloadSampleImportTemplate(): void {
       '', '',
       6000, 6000, 6000, 6500, 6500, 7000, 7000, 7000, 7000, 7000, 7000,
     ],
-    // Row 2: demonstrates the optional second contact number, no fee change.
     [
       '002', 'Class IX', 'ETC-1002', 'Ayesha Fatima', 'Nadeem Akhtar',
       '03219876543', '03211234567',
@@ -540,7 +533,6 @@ export function downloadSampleImportTemplate(): void {
       '', '', '', '', '', '',
       6000, 6000, 6000, 6000, 6000, 6000, 6000, 6000, 0, 0, 0,
     ],
-    // Row 3: no fee change, single contact only — the most common case.
     [
       '003', 'Class VIII', 'ETC-1003', 'Zain Ul Abideen', 'Ghulam Rasool',
       '03335557788', '',
@@ -560,37 +552,36 @@ export function downloadSampleImportTemplate(): void {
   const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
 
   ws['!cols'] = [
-    { wch: 8 },  // S#
-    { wch: 14 }, // Class
-    { wch: 12 }, // Roll No
-    { wch: 22 }, // Student Name
-    { wch: 22 }, // Father Name
-    { wch: 20 }, // Contact No 1
-    { wch: 20 }, // Contact No 2
-    { wch: 16 }, // Monthly Fee
-    { wch: 12 }, // New Fee 1
-    { wch: 16 }, // Effective From 1
-    { wch: 12 }, // New Fee 2
-    { wch: 16 }, // Effective From 2
-    { wch: 12 }, // New Fee 3
-    { wch: 16 }, // Effective From 3
-    { wch: 10 }, // Jun
-    { wch: 10 }, // Jul
-    { wch: 10 }, // Aug
-    { wch: 10 }, // Sep
-    { wch: 10 }, // Oct
-    { wch: 10 }, // Nov
-    { wch: 10 }, // Dec
-    { wch: 10 }, // Jan
-    { wch: 10 }, // Feb
-    { wch: 10 }, // Mar
-    { wch: 10 }, // Apr
-    { wch: 10 }, // May
+    { wch: 8 },
+    { wch: 14 },
+    { wch: 12 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
   ];
 
-  // Preserve leading zeros / text formatting for S#, Contact No 1, and Contact No 2 columns
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
-  const textColumns = [0, 5, 6]; // S#, Contact No 1, Contact No 2
+  const textColumns = [0, 5, 6];
   for (let r = 1; r <= range.e.r; ++r) {
     for (const colIdx of textColumns) {
       const cellRef = XLSX.utils.encode_cell({ c: colIdx, r });
