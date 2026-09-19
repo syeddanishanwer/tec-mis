@@ -74,7 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // 5. Populate invoices for Jun through May using the correct month-by-month fee
       for (const month of ACADEMIC_MONTHS) {
-        const paidAmt = student.monthlyAmounts?.[month] ?? 0;
+        const paidAmt = student.monthlyAmountsPaid?.[month] ?? 0; 
         const expectedFee = feeForMonth(month);
         const concession = student.discount || 0;
         const netDue = expectedFee - concession;

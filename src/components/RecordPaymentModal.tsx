@@ -149,7 +149,7 @@ export const RecordPaymentModal: React.FC<Props> = ({
             >
               {ACADEMIC_MONTHS.map((m) => (
                 <option key={m} value={m}>
-                  {m} (Current Status: {(student.monthlyStatus?.[m] || 'pending').toUpperCase()})
+                  {m} (Current Status: {(student.monthlyStatus?.[m] || 'unpaid').toUpperCase()})
                 </option>
               ))}
             </select>
@@ -176,7 +176,7 @@ export const RecordPaymentModal: React.FC<Props> = ({
               >
                 <option value="paid">Paid (Fully Cleared)</option>
                 <option value="partial">Partial (Partially Paid)</option>
-                <option value="pending">Pending (Unpaid)</option>
+                <option value="unpaid">Unpaid (Unpaid)</option>
               </select>
             </div>
           </div>

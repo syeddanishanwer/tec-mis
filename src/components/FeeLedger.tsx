@@ -441,7 +441,7 @@ export const FeeLedger: React.FC<Props> = ({
       <button
         type="button"
         onClick={() => onToggleMonthStatus(studentId, month)}
-        title={`Click to cycle status for ${month} (Paid -> Partial -> Pending) • Amount: Rs. ${amount.toLocaleString()}`}
+        title={`Click to cycle status for ${month} (Paid -> Partial -> Unpaid) • Amount: Rs. ${amount.toLocaleString()}`}
         className={`px-1.5 py-1 text-[11px] font-semibold rounded-md border transition-all cursor-pointer text-center min-w-[54px] ${bg}`}
       >
         {cellDisplayMode === 'status' ? (

@@ -255,7 +255,7 @@ export const MonthlySummary: React.FC<Props> = ({
             <div className="text-lg font-bold text-rose-400 mt-1">
               Rs. {sessionDue.toLocaleString()}
             </div>
-            <span className="text-[10px] text-rose-300/80">Net pending dues across session</span>
+            <span className="text-[10px] text-rose-300/80">Net unpaid dues across session</span>
           </div>
 
           <div>
@@ -309,7 +309,7 @@ export const MonthlySummary: React.FC<Props> = ({
 
         <div className="bg-white rounded-xl border border-rose-200 bg-rose-50/30 p-4 shadow-xs">
           <div className="flex items-center justify-between text-rose-800 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Pending Dues</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Unpaid Dues</span>
             <AlertCircle className="w-4 h-4 text-rose-600" />
           </div>
           <div className="text-2xl font-bold text-rose-700">
@@ -378,7 +378,7 @@ export const MonthlySummary: React.FC<Props> = ({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-neutral-500">Pending:</span>
+                  <span className="text-neutral-500">Unpaid:</span>
                   <span className="font-semibold text-rose-600">
                     Rs. {item.pendingRevenue.toLocaleString()}
                   </span>
