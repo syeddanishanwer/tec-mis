@@ -7978,7 +7978,7 @@ export function formatSerialNo(val?: string | number, fallbackIndex?: number): s
     return String(val).padStart(3, '0');
   }
   if (typeof fallbackIndex === 'number') {
-    return String(fallbackIndex).padStart(3, '0');
+    return String(fallbackIndex+1).padStart(3, '0');
   }
   return '001';
 }

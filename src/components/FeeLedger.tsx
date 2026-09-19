@@ -5,6 +5,7 @@ import {
   calculateStudentTotals,
   formatPhoneDisplay,
   getEffectiveMonthlyStatus,
+  getStudentMonthlyFeeForMonth as getEffectiveFeeForMonth, // Clean & explicit
   formatSerialNo,
 } from '../data/mockStudents';
 import { exportToCSV, exportToExcel, printFeeLedger } from '../utils/exportHelpers';
@@ -61,6 +62,7 @@ interface Props {
   students: StudentRecord[];
   activeAcademicYear?: string;
   activeMonth?: AcademicMonth;
+  invoicesMap?: Map<string, Invoice>; // <--- Add this
   onActiveMonthChange?: (month: AcademicMonth) => void;
   onOpenWhatsApp: (student: StudentRecord, month: AcademicMonth) => void;
   onOpenPaymentModal: (student: StudentRecord) => void;
@@ -76,6 +78,7 @@ export const FeeLedger: React.FC<Props> = ({
   students,
   activeAcademicYear = '2026-2027',
   activeMonth,
+  invoicesMap: externalInvoiceMap, // <--- Add this
   onActiveMonthChange,
   onOpenWhatsApp,
   onOpenPaymentModal,
@@ -130,12 +133,15 @@ export const FeeLedger: React.FC<Props> = ({
 
   // Quick lookup map: "studentId_month" -> Invoice (e.g. "1000_Sep")
   const invoiceMap = useMemo(() => {
+    if (externalInvoiceMap && externalInvoiceMap.size > 0) {
+      return externalInvoiceMap;
+    }
     const map = new Map<string, Invoice>();
     invoices.forEach((inv) => {
       map.set(`${inv.studentId}_${inv.month}`, inv);
     });
     return map;
-  }, [invoices]);
+  }, [invoices, externalInvoiceMap]);
 
   // Inline editing state for "Amounts Only (PKR)" mode
   const [editingCell, setEditingCell] = useState<{
@@ -260,8 +266,7 @@ export const FeeLedger: React.FC<Props> = ({
         } else {
           // No invoice generated yet for this month — fall back to the flat rate
           // so the ledger still shows a sensible number before generation runs.
-          const net = Math.max(0, (student.monthlyFee || 0) - (student.discount || 0));
-          billed += net;
+          const net = getEffectiveFeeForMonth(student, m); billed += net;
           due += net;
           studentDue += net;
         }
@@ -310,7 +315,7 @@ export const FeeLedger: React.FC<Props> = ({
           paid = inv.paidAmount;
           due = Math.max(0, inv.netDue - paid);
         } else {
-          const netFee = Math.max(0, (s.monthlyFee || 0) - (s.discount || 0));
+          const netFee = getEffectiveFeeForMonth(s, m);
           paid = s.monthlyAmountsPaid?.[m] || 0;
           due = Math.max(0, netFee - paid);
         }
@@ -842,7 +847,7 @@ export const FeeLedger: React.FC<Props> = ({
                               studentDue += dueAmt;
                               if (dueAmt > 0) studentOverdueCount++;
                             } else {
-                              const netFee = Math.max(0, (student.monthlyFee || 0) - (student.discount || 0));
+                              const netFee = getEffectiveFeeForMonth(student, m);
                               const paid = student.monthlyAmountsPaid?.[m] || 0;
                               const dueAmt = Math.max(0, netFee - paid);
                               studentCollected += paid;
