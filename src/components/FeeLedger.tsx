@@ -897,10 +897,20 @@ export const FeeLedger: React.FC<Props> = ({
                               </td>
 
                               <td className="py-2.5 px-3 text-right font-semibold text-neutral-800 whitespace-nowrap">
+                                {/* Base Fee */}
                                 Rs. {student.monthlyFee.toLocaleString()}
+
+                                {/* Discount indicator (if applicable) */}
                                 {student.discount > 0 && (
                                   <span className="block text-[10px] text-emerald-600 font-normal">
-                                    (-{student.discount})
+                                    (-{student.discount.toLocaleString()})
+                                  </span>
+                                )}
+
+                                {/* Mid-year fee revision subtext (if applicable) */}
+                                {student.feeChanges && student.feeChanges.length > 0 && (
+                                  <span className="block text-[10px] text-blue-600 font-medium">
+                                    Rs. {student.feeChanges[student.feeChanges.length - 1].newFee.toLocaleString()} ({student.feeChanges[student.feeChanges.length - 1].effectiveFromMonth})
                                   </span>
                                 )}
                               </td>
