@@ -159,12 +159,13 @@ export const FeeLedger: React.FC<Props> = ({
     setEditValue(currentAmount > 0 ? String(currentAmount) : '');
   };
 
-  const handleCommitAmount = (studentId: number, month: AcademicMonth) => {
+  const handleCommitAmount = async (studentId: number, month: AcademicMonth) => {
     const parsed = parseInt(editValue, 10);
     const finalAmt = isNaN(parsed) || parsed < 0 ? 0 : parsed;
     if (onUpdateMonthAmount) {
-      onUpdateMonthAmount(studentId, month, finalAmt);
+      await onUpdateMonthAmount(studentId, month, finalAmt);
     }
+    refetchInvoices(); // Immediately refresh local invoices state from API
     setEditingCell(null);
   };
 
