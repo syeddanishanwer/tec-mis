@@ -9,14 +9,22 @@ const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 export async function verifyAuth(req: VercelRequest): Promise<boolean> {
   try {
-    const cookies = req.headers.cookie || '';
-    const match = cookies.split('; ').find((row) => row.startsWith('auth_token='));
-    if (!match) return false;
+    const rawCookies = req.headers.cookie;
+    if (!rawCookies) return false;
 
-    const token = match.split('=')[1];
+    // Resilient cookie parser handling multiple key-value pairs
+    const cookies = rawCookies.split(';').reduce((acc, current) => {
+      const [key, ...value] = current.trim().split('=');
+      if (key) acc[key] = value.join('=');
+      return acc;
+    }, {} as Record<string, string>);
+
+    const token = cookies['auth_token'];
+    if (!token) return false;
+
     await jwtVerify(token, JWT_SECRET);
     return true;
-  } catch {
+  } catch (err) {
     return false;
   }
 }
