@@ -5,6 +5,7 @@ import {
   calculateStudentTotals,
   formatPhoneDisplay,
   getEffectiveMonthlyStatus,
+  getEffectiveMonthlyAmounts, // <--- Add this import
   getStudentMonthlyFeeForMonth as getEffectiveFeeForMonth, // Clean & explicit
   formatSerialNo,
 } from '../data/mockStudents';
@@ -917,14 +918,15 @@ export const FeeLedger: React.FC<Props> = ({
                               </td>
 
                               {visibleMonths.map((m) => {
+                                // Declare inv FIRST
                                 const inv = invoiceMap.get(`${student.id}_${m}`);
-                                const paidAmount = inv
-                                  ? inv.paidAmount
-                                  : (student.monthlyAmountsPaid?.[m] || 0);
+                                // Read effective status directly from student record, falling back to invoice map if needed
+                                const studentStatusMap = getEffectiveMonthlyStatus(student, activeAcademicYear);
+                                const currentStatus: PaymentStatus = studentStatusMap[m] || (inv ? (inv.status === 'paid' ? 'paid' : inv.status === 'partial' ? 'partial' : 'unpaid') : 'unpaid');
 
-                                const currentStatus: PaymentStatus = inv
-                                  ? (inv.status === 'paid' ? 'paid' : inv.status === 'partial' ? 'partial' : 'unpaid')
-                                  : (getEffectiveMonthlyStatus(student, activeAcademicYear)[m] || 'unpaid');
+                                // Read effective paid amount directly from student record, falling back to invoice map if needed
+                                const studentAmountMap = getEffectiveMonthlyAmounts(student, activeAcademicYear);
+                                const paidAmount = studentAmountMap[m] ?? (inv ? inv.paidAmount : 0);
 
                                 return (
                                   <td

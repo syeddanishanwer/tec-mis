@@ -155,8 +155,8 @@ export default function App() {
     }
   }, [students]);
 
-  // 1. PERSIST SINGLE STUDENT UPDATE (POST)
-  const syncStudentToBackend = async (student: StudentRecord) => {
+  // 1. PERSIST SINGLE STUDENT UPDATE (POST) — Returns boolean on DB success
+  const syncStudentToBackend = async (student: StudentRecord): Promise<boolean> => {
     setIsSyncing(true);
     try {
       const res = await fetch('/api/update', {
@@ -173,11 +173,15 @@ export default function App() {
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         console.error('API Update Error:', res.status, errData);
-        showToast(`⚠️ Server save failed (${res.status}). Saved locally.`);
+        showToast(`⚠️ Server save failed (${res.status}): ${errData.error || 'Unauthorized or server error'}`);
+        return false;
       }
+
+      return true;
     } catch (err) {
       console.error('Failed to persist student change to backend database:', err);
       showToast('⚠️ Network error saving to database.');
+      return false;
     } finally {
       setIsSyncing(false);
     }
@@ -205,6 +209,109 @@ export default function App() {
     } catch (err) {
       console.error('Invoice payment sync network error:', err);
       showToast('⚠️ Ledger updated locally, but invoice sync had a network error.');
+    }
+  };
+
+  // Fixed Status toggle handler with optimistic rollback & strict DB check
+  const handleToggleMonthStatus = async (studentId: number, month: AcademicMonth) => {
+    let newStatus: PaymentStatus = 'paid';
+    let updatedStudentObj: StudentRecord | null = null;
+    let originalStudents = students;
+    let finalAmount = 0;
+
+    // Apply change locally
+    setStudents((prev) => {
+      originalStudents = prev;
+      return prev.map((s) => {
+        if (s.id !== studentId) return s;
+        const currentMap = getEffectiveMonthlyStatus(s, selectedAcademicYear);
+        const current = currentMap[month] || 'unpaid';
+        let next: PaymentStatus = 'paid';
+        if (current === 'paid') next = 'partial';
+        else if (current === 'partial') next = 'unpaid';
+        else next = 'paid';
+        newStatus = next;
+
+        const updatedMap = { ...currentMap, [month]: next };
+        const effectiveFee = Math.max(0, s.monthlyFee - s.discount);
+        let nextAmount = 0;
+        if (next === 'paid') nextAmount = effectiveFee;
+        else if (next === 'partial') nextAmount = Math.round(effectiveFee / 2);
+        else nextAmount = 0;
+
+        const currentAmounts = getEffectiveMonthlyAmounts(s, selectedAcademicYear);
+        const updatedAmounts = { ...currentAmounts, [month]: nextAmount };
+        finalAmount = nextAmount;
+
+        updatedStudentObj = {
+          ...s,
+          yearlyStatus: { ...(s.yearlyStatus || {}), [selectedAcademicYear]: updatedMap },
+          yearlyAmountsPaid: { ...(s.yearlyAmountsPaid || {}), [selectedAcademicYear]: updatedAmounts },
+          monthlyStatus: s.academicYear === selectedAcademicYear ? updatedMap : s.monthlyStatus,
+          monthlyAmountsPaid: s.academicYear === selectedAcademicYear ? updatedAmounts : s.monthlyAmountsPaid,
+        };
+
+        return updatedStudentObj;
+      });
+    });
+
+    if (updatedStudentObj) {
+      const saveSuccess = await syncStudentToBackend(updatedStudentObj);
+      if (saveSuccess) {
+        await syncPaymentToInvoice(studentId, month, finalAmount);
+        showToast(`Updated ${month} status to ${newStatus} (${selectedAcademicYear})`);
+      } else {
+        // Rollback state if database save failed
+        setStudents(originalStudents);
+      }
+    }
+  };
+
+  // Update exact fee amount for a student in a specific month
+  const handleUpdateMonthAmount = async (studentId: number, month: AcademicMonth, amount: number) => {
+    const validAmount = Math.max(0, isNaN(amount) ? 0 : amount);
+    let studentName = '';
+    let updatedStudentObj: StudentRecord | null = null;
+    let originalStudents = students;
+
+    setStudents((prev) => {
+      originalStudents = prev;
+      return prev.map((s) => {
+        if (s.id !== studentId) return s;
+        studentName = s.studentName;
+        const effectiveFee = Math.max(0, s.monthlyFee - s.discount);
+
+        let derivedStatus: PaymentStatus = 'unpaid';
+        if (validAmount >= effectiveFee && effectiveFee > 0) derivedStatus = 'paid';
+        else if (validAmount > 0) derivedStatus = 'partial';
+        else derivedStatus = 'unpaid';
+
+        const currentMap = getEffectiveMonthlyStatus(s, selectedAcademicYear);
+        const updatedMap = { ...currentMap, [month]: derivedStatus };
+        const currentAmounts = getEffectiveMonthlyAmounts(s, selectedAcademicYear);
+        const updatedAmounts = { ...currentAmounts, [month]: validAmount };
+
+        updatedStudentObj = {
+          ...s,
+          yearlyStatus: { ...(s.yearlyStatus || {}), [selectedAcademicYear]: updatedMap },
+          yearlyAmountsPaid: { ...(s.yearlyAmountsPaid || {}), [selectedAcademicYear]: updatedAmounts },
+          monthlyStatus: s.academicYear === selectedAcademicYear ? updatedMap : s.monthlyStatus,
+          monthlyAmountsPaid: s.academicYear === selectedAcademicYear ? updatedAmounts : s.monthlyAmountsPaid,
+        };
+
+        return updatedStudentObj;
+      });
+    });
+
+    if (updatedStudentObj) {
+      const saveSuccess = await syncStudentToBackend(updatedStudentObj);
+      if (saveSuccess) {
+        await syncPaymentToInvoice(studentId, month, validAmount);
+        showToast(`Updated ${month} fee for ${studentName || 'student'} to Rs. ${validAmount.toLocaleString()} (${selectedAcademicYear})`);
+      } else {
+        // Rollback state if database save failed
+        setStudents(originalStudents);
+      }
     }
   };
 
@@ -276,94 +383,6 @@ export default function App() {
     });
     return { billed, collected, due };
   }, [students, activeMonthIndex, selectedAcademicYear]);
-
-  // Fixed Status toggle handler
-  const handleToggleMonthStatus = async (studentId: number, month: AcademicMonth) => {
-    let newStatus: PaymentStatus = 'paid';
-    let updatedStudentObj: StudentRecord | null = null;
-    let finalAmount = 0;
-
-    setStudents((prev) =>
-      prev.map((s) => {
-        if (s.id !== studentId) return s;
-        const currentMap = getEffectiveMonthlyStatus(s, selectedAcademicYear);
-        const current = currentMap[month] || 'unpaid';
-        let next: PaymentStatus = 'paid';
-        if (current === 'paid') next = 'partial';
-        else if (current === 'partial') next = 'unpaid';
-        else next = 'paid';
-        newStatus = next;
-
-        const updatedMap = { ...currentMap, [month]: next };
-        const effectiveFee = Math.max(0, s.monthlyFee - s.discount);
-        let nextAmount = 0;
-        if (next === 'paid') nextAmount = effectiveFee;
-        else if (next === 'partial') nextAmount = Math.round(effectiveFee / 2);
-        else nextAmount = 0;
-
-        const currentAmounts = getEffectiveMonthlyAmounts(s, selectedAcademicYear);
-        const updatedAmounts = { ...currentAmounts, [month]: nextAmount };
-        finalAmount = nextAmount;
-
-        updatedStudentObj = {
-          ...s,
-          yearlyStatus: { ...(s.yearlyStatus || {}), [selectedAcademicYear]: updatedMap },
-          yearlyAmountsPaid: { ...(s.yearlyAmountsPaid || {}), [selectedAcademicYear]: updatedAmounts },
-          monthlyStatus: s.academicYear === selectedAcademicYear ? updatedMap : s.monthlyStatus,
-          monthlyAmountsPaid: s.academicYear === selectedAcademicYear ? updatedAmounts : s.monthlyAmountsPaid,
-        };
-
-        return updatedStudentObj;
-      })
-    );
-
-    if (updatedStudentObj) {
-      await syncStudentToBackend(updatedStudentObj);
-      await syncPaymentToInvoice(studentId, month, finalAmount);
-    }
-    showToast(`Updated ${month} status to ${newStatus} (${selectedAcademicYear})`);
-  };
-
-  // Update exact fee amount for a student in a specific month
-  const handleUpdateMonthAmount = async (studentId: number, month: AcademicMonth, amount: number) => {
-    const validAmount = Math.max(0, isNaN(amount) ? 0 : amount);
-    let studentName = '';
-    let updatedStudentObj: StudentRecord | null = null;
-
-    setStudents((prev) =>
-      prev.map((s) => {
-        if (s.id !== studentId) return s;
-        studentName = s.studentName;
-        const effectiveFee = Math.max(0, s.monthlyFee - s.discount);
-
-        let derivedStatus: PaymentStatus = 'unpaid';
-        if (validAmount >= effectiveFee && effectiveFee > 0) derivedStatus = 'paid';
-        else if (validAmount > 0) derivedStatus = 'partial';
-        else derivedStatus = 'unpaid';
-
-        const currentMap = getEffectiveMonthlyStatus(s, selectedAcademicYear);
-        const updatedMap = { ...currentMap, [month]: derivedStatus };
-        const currentAmounts = getEffectiveMonthlyAmounts(s, selectedAcademicYear);
-        const updatedAmounts = { ...currentAmounts, [month]: validAmount };
-
-        updatedStudentObj = {
-          ...s,
-          yearlyStatus: { ...(s.yearlyStatus || {}), [selectedAcademicYear]: updatedMap },
-          yearlyAmountsPaid: { ...(s.yearlyAmountsPaid || {}), [selectedAcademicYear]: updatedAmounts },
-          monthlyStatus: s.academicYear === selectedAcademicYear ? updatedMap : s.monthlyStatus,
-          monthlyAmountsPaid: s.academicYear === selectedAcademicYear ? updatedAmounts : s.monthlyAmountsPaid,
-        };
-
-        return updatedStudentObj;
-      })
-    );
-
-    if (updatedStudentObj) {
-      await syncStudentToBackend(updatedStudentObj);
-      await syncPaymentToInvoice(studentId, month, validAmount);
-    }
-    showToast(`Updated ${month} fee for ${studentName || 'student'} to Rs. ${validAmount.toLocaleString()} (${selectedAcademicYear})`);
-  };
 
   // Record payment handler
   const handleSavePayment = (

@@ -3,22 +3,26 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyAuth } from './fees/_auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const isAuthenticated = await verifyAuth(req);
-  if (!isAuthenticated) {
-    return res.status(401).json({ error: 'Unauthorized: Access Denied' });
-  }
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { studentId, updatedStudent } = req.body;
+    const isAuthenticated = await verifyAuth(req);
+    if (!isAuthenticated) {
+      return res.status(401).json({ error: 'Unauthorized: Access Denied' });
+    }
+
+    const { studentId, updatedStudent } = req.body || {};
 
     if (!studentId || !updatedStudent) {
       return res.status(400).json({ error: 'Missing studentId or updatedStudent payload' });
     }
 
-    await sql`
+    const sId = Number(studentId);
+
+    // Perform database UPDATE
+    const result = await sql`
       UPDATE students SET
         serial_no = ${updatedStudent.serialNo ?? null},
         roll_no = ${updatedStudent.rollNo},
@@ -31,12 +35,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         admission_date = ${updatedStudent.admissionDate ?? null},
         data = ${JSON.stringify(updatedStudent)}::jsonb,
         updated_at = now()
-      WHERE id = ${studentId};
+      WHERE id = ${sId}
+      RETURNING id;
     `;
 
-    return res.status(200).json({ success: true, id: studentId });
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: `Student with ID ${sId} not found in database.` });
+    }
+
+    return res.status(200).json({ success: true, id: sId });
   } catch (error: any) {
-    console.error('Update Endpoint Error:', error);
+    console.error('Update Endpoint Database Error:', error);
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }
