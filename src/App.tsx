@@ -127,8 +127,7 @@ export default function App() {
     showToast('Logged out of system.');
   };
 
-
-  // Verify session with the server on initial load (HttpOnly cookie can't be read directly)
+  // Verify session with the server on initial load
   useEffect(() => {
     let isMounted = true;
     async function checkAuth() {
@@ -278,8 +277,8 @@ export default function App() {
     return { billed, collected, due };
   }, [students, activeMonthIndex, selectedAcademicYear]);
 
-  // Status toggle handler
-  const handleToggleMonthStatus = (studentId: number, month: AcademicMonth) => {
+  // Fixed Status toggle handler
+  const handleToggleMonthStatus = async (studentId: number, month: AcademicMonth) => {
     let newStatus: PaymentStatus = 'paid';
     let updatedStudentObj: StudentRecord | null = null;
     let finalAmount = 0;
@@ -319,14 +318,14 @@ export default function App() {
     );
 
     if (updatedStudentObj) {
-      syncStudentToBackend(updatedStudentObj);
-      syncPaymentToInvoice(studentId, month, finalAmount);
+      await syncStudentToBackend(updatedStudentObj);
+      await syncPaymentToInvoice(studentId, month, finalAmount);
     }
     showToast(`Updated ${month} status to ${newStatus} (${selectedAcademicYear})`);
   };
 
   // Update exact fee amount for a student in a specific month
-  const handleUpdateMonthAmount = (studentId: number, month: AcademicMonth, amount: number) => {
+  const handleUpdateMonthAmount = async (studentId: number, month: AcademicMonth, amount: number) => {
     const validAmount = Math.max(0, isNaN(amount) ? 0 : amount);
     let studentName = '';
     let updatedStudentObj: StudentRecord | null = null;
@@ -360,8 +359,8 @@ export default function App() {
     );
 
     if (updatedStudentObj) {
-      syncStudentToBackend(updatedStudentObj);
-      syncPaymentToInvoice(studentId, month, validAmount);
+      await syncStudentToBackend(updatedStudentObj);
+      await syncPaymentToInvoice(studentId, month, validAmount);
     }
     showToast(`Updated ${month} fee for ${studentName || 'student'} to Rs. ${validAmount.toLocaleString()} (${selectedAcademicYear})`);
   };
@@ -460,9 +459,6 @@ export default function App() {
     } else if (strategy === 'append') {
       finalStudents = [...students, ...importedStudents];
     } else {
-      let updatedCount = 0;
-      let addedCount = 0;
-
       const result = [...students];
       importedStudents.forEach((imp) => {
         const existingIdx = result.findIndex(
@@ -474,7 +470,6 @@ export default function App() {
         );
 
         if (existingIdx >= 0) {
-          updatedCount++;
           const existing = result[existingIdx];
           result[existingIdx] = {
             ...existing,
@@ -499,7 +494,6 @@ export default function App() {
             },
           };
         } else {
-          addedCount++;
           result.push(imp);
         }
       });
@@ -509,9 +503,6 @@ export default function App() {
 
     setStudents(finalStudents);
     syncBulkStudentsToBackend(finalStudents, activeYear, strategy === 'replace');
-
-    const finalUpdated = stats?.updated ?? 0;
-    const finalAdded = stats?.added ?? 0;
     showToast(`Import complete! Loaded ${finalStudents.length} student records.`);
   };
 
@@ -544,7 +535,7 @@ export default function App() {
     showToast(`Academic Year ${newYear} successfully added!`);
   };
 
-  // AUTH GUARD: Wait for server verification before deciding what to render
+  // AUTH GUARD
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-neutral-100 flex items-center justify-center">
@@ -637,10 +628,11 @@ export default function App() {
               {/* Pan View Toggle */}
               <button
                 onClick={() => setIsPanMode((prev) => !prev)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer ${isPanMode || isSpaceHeld
-                  ? 'bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold ring-2 ring-amber-300 shadow-sm'
-                  : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
-                  }`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer ${
+                  isPanMode || isSpaceHeld
+                    ? 'bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold ring-2 ring-amber-300 shadow-sm'
+                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+                }`}
               >
                 <Hand className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">{isPanMode ? 'Pan: ON' : 'Pan View'}</span>
@@ -680,8 +672,9 @@ export default function App() {
             <div className="flex space-x-1 sm:space-x-2 overflow-x-auto">
               <button
                 onClick={() => setActiveTab('summary')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${activeTab === 'summary' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                  }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
+                  activeTab === 'summary' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
               >
                 <BarChart3 className="w-3.5 h-3.5" />
                 Monthly Summary Dashboard
@@ -689,8 +682,9 @@ export default function App() {
 
               <button
                 onClick={() => setActiveTab('ledger')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${activeTab === 'ledger' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                  }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
+                  activeTab === 'ledger' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
               >
                 <Table className="w-3.5 h-3.5" />
                 Student Fee Ledger
@@ -698,8 +692,9 @@ export default function App() {
 
               <button
                 onClick={() => setActiveTab('aging')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${activeTab === 'aging' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                  }`}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
+                  activeTab === 'aging' ? 'bg-blue-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
               >
                 <ClockAlert className="w-3.5 h-3.5" />
                 Fee Receivable Aging Report
