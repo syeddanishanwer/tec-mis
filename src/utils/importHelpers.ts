@@ -1,6 +1,18 @@
 import * as XLSX from 'xlsx';
-import { StudentRecord, SchoolClass, AcademicMonth, ACADEMIC_MONTHS, PaymentStatus } from '../types';
-import { ALL_CLASSES, formatSerialNo } from '../data/mockStudents';
+import { StudentRecord, SchoolClass, AcademicMonth, ACADEMIC_MONTHS, PaymentStatus, FeeSchedule, Invoice } from '../types';
+
+// FIXED: Local constants - no mockStudents import
+export const ALL_CLASSES: SchoolClass[] = [
+  'Reception', 'Junior', 'Senior',
+  'Class I', 'Class II', 'Class III', 'Class IV', 'Class V',
+  'Class VI', 'Class VII', 'Class VIII', 'Class IX', 'Class X'
+];
+
+export function formatSerialNo(serialNo?: string, fallbackId?: number): string {
+  if (serialNo) return String(serialNo).trim().padStart(3, '0');
+  if (fallbackId) return String(fallbackId).padStart(3, '0');
+  return '001';
+}
 
 export interface FeeChange {
   newFee: number;
@@ -18,7 +30,7 @@ export interface ParsedImportRow {
   contactNo2?: string;
   monthlyFee: number;
   discount: number;
-  feeChanges: FeeChange[]; // 0 to 3 entries, chronologically ordered
+  feeChanges: FeeChange[];
   monthlyAmounts: Record<AcademicMonth, number>;
   monthlyStatuses: Record<AcademicMonth, PaymentStatus>;
   isValid: boolean;
@@ -34,58 +46,37 @@ export interface ImportParseResult {
   warnings: string[];
 }
 
-/**
- * Normalizes any variation of class name to standard SchoolClass
- */
 export function normalizeClassName(rawClass: any): SchoolClass {
   if (!rawClass) return 'Class I';
   const str = String(rawClass).trim().toLowerCase();
-
   if (str.includes('rec') || str.includes('nur') || str.includes('kg')) return 'Reception';
   if (str.includes('jun') || str.includes('prep')) return 'Junior';
   if (str.includes('sen') || str.includes('kg 2')) return 'Senior';
-
-  if (str === '1' || str === 'i' || str === 'class 1' || str === 'class i' || str === 'grade 1') return 'Class I';
-  if (str === '2' || str === 'ii' || str === 'class 2' || str === 'class ii' || str === 'grade 2') return 'Class II';
-  if (str === '3' || str === 'iii' || str === 'class 3' || str === 'class iii' || str === 'grade 3') return 'Class III';
-  if (str === '4' || str === 'iv' || str === 'class 4' || str === 'class iv' || str === 'grade 4') return 'Class IV';
-  if (str === '5' || str === 'v' || str === 'class 5' || str === 'class v' || str === 'grade 5') return 'Class V';
-  if (str === '6' || str === 'vi' || str === 'class 6' || str === 'class vi' || str === 'grade 6') return 'Class VI';
-  if (str === '7' || str === 'vii' || str === 'class 7' || str === 'class vii' || str === 'grade 7') return 'Class VII';
-  if (str === '8' || str === 'viii' || str === 'class 8' || str === 'class viii' || str === 'grade 8') return 'Class VIII';
-  if (str === '9' || str === 'ix' || str === 'class 9' || str === 'class ix' || str === 'grade 9') return 'Class IX';
-  if (str === '10' || str === 'x' || str === 'class 10' || str === 'class x' || str === 'grade 10') return 'Class X';
-
+  if (str === '1' || str === 'i' || str.includes('class 1') || str.includes('grade 1')) return 'Class I';
+  if (str === '2' || str === 'ii' || str.includes('class 2') || str.includes('grade 2')) return 'Class II';
+  if (str === '3' || str === 'iii' || str.includes('class 3') || str.includes('grade 3')) return 'Class III';
+  if (str === '4' || str === 'iv' || str.includes('class 4') || str.includes('grade 4')) return 'Class IV';
+  if (str === '5' || str === 'v' || str.includes('class 5') || str.includes('grade 5')) return 'Class V';
+  if (str === '6' || str === 'vi' || str.includes('class 6') || str.includes('grade 6')) return 'Class VI';
+  if (str === '7' || str === 'vii' || str.includes('class 7') || str.includes('grade 7')) return 'Class VII';
+  if (str === '8' || str === 'viii' || str.includes('class 8') || str.includes('grade 8')) return 'Class VIII';
+  if (str === '9' || str === 'ix' || str.includes('class 9') || str.includes('grade 9')) return 'Class IX';
+  if (str === '10' || str === 'x' || str.includes('class 10') || str.includes('grade 10')) return 'Class X';
   const match = ALL_CLASSES.find((c) => c.toLowerCase() === str);
-  if (match) return match;
-
-  return 'Class I';
+  return match || 'Class I';
 }
 
-/**
- * Normalizes raw contact number to standard 12-digit 923... or cleaned digits.
- * Returns undefined if the input is empty (used for the optional second contact).
- */
 export function normalizeContactNumber(rawPhone: any, allowEmpty = false): string | undefined {
   if (!rawPhone || String(rawPhone).trim() === '') {
-    return allowEmpty ? undefined : '923001234567';
+    return allowEmpty? undefined : '923001234567';
   }
   let cleaned = String(rawPhone).replace(/[^0-9]/g, '');
-
-  if (cleaned.startsWith('03') && cleaned.length === 11) {
-    cleaned = '92' + cleaned.slice(1);
-  } else if (cleaned.length === 10 && cleaned.startsWith('3')) {
-    cleaned = '92' + cleaned;
-  } else if (!cleaned.startsWith('92') && cleaned.length >= 10) {
-    cleaned = '92' + cleaned.slice(-10);
-  }
-
-  return cleaned || (allowEmpty ? undefined : '923001234567');
+  if (cleaned.startsWith('03') && cleaned.length === 11) cleaned = '92' + cleaned.slice(1);
+  else if (cleaned.length === 10 && cleaned.startsWith('3')) cleaned = '92' + cleaned;
+  else if (!cleaned.startsWith('92') && cleaned.length >= 10) cleaned = '92' + cleaned.slice(-10);
+  return cleaned || (allowEmpty? undefined : '923001234567');
 }
 
-/**
- * Parses one fee-change slot's raw cell values into a validated FeeChange, or null if blank/unchanged.
- */
 function parseFeeChangeSlot(
   monthlyFee: number,
   rawFee: any,
@@ -94,108 +85,56 @@ function parseFeeChangeSlot(
   warnings: string[],
   errors: string[]
 ): FeeChange | null {
-  const feeStr = rawFee !== undefined && rawFee !== null ? String(rawFee).trim() : '';
-  const monthStr = rawMonth !== undefined && rawMonth !== null ? String(rawMonth).trim() : '';
-
-  const feeFilled = feeStr !== '';
-  const monthFilled = monthStr !== '';
-
-  if (!feeFilled && !monthFilled) {
-    return null; // Slot genuinely unused — no change here
-  }
-
-  if (feeFilled !== monthFilled) {
-    errors.push(
-      `Fee Change Slot ${slotNumber}: both "New Fee ${slotNumber}" and "Effective From ${slotNumber}" must be filled in together, or both left blank.`
-    );
+  const feeStr = rawFee!== undefined && rawFee!== null? String(rawFee).trim() : '';
+  const monthStr = rawMonth!== undefined && rawMonth!== null? String(rawMonth).trim() : '';
+  const feeFilled = feeStr!== '';
+  const monthFilled = monthStr!== '';
+  if (!feeFilled &&!monthFilled) return null;
+  if (feeFilled!== monthFilled) {
+    errors.push(`Fee Change Slot ${slotNumber}: both "New Fee ${slotNumber}" and "Effective From ${slotNumber}" must be filled together.`);
     return null;
   }
-
   const cleanFee = feeStr.replace(/[^0-9.]/g, '');
   const parsedFee = parseFloat(cleanFee);
   if (isNaN(parsedFee) || parsedFee < 0) {
-    errors.push(`Fee Change Slot ${slotNumber}: invalid fee amount "${feeStr}".`);
+    errors.push(`Fee Change Slot ${slotNumber}: invalid fee "${feeStr}".`);
     return null;
   }
-
   const roundedFee = Math.round(parsedFee);
+  if (roundedFee === monthlyFee) return null;
 
-  // Skip slot if the new fee is identical to the base monthly fee
-  if (roundedFee === monthlyFee) {
-    return null;
-  }
-
-  // Match month name against ACADEMIC_MONTHS (case-insensitive, allow full month names too)
   const monthLower = monthStr.toLowerCase();
   const monthAliasMap: Record<string, AcademicMonth> = {
-    jun: 'Jun', june: 'Jun',
-    jul: 'Jul', july: 'Jul',
-    aug: 'Aug', august: 'Aug',
-    sep: 'Sep', sept: 'Sep', september: 'Sep',
-    oct: 'Oct', october: 'Oct',
-    nov: 'Nov', november: 'Nov',
-    dec: 'Dec', december: 'Dec',
-    jan: 'Jan', january: 'Jan',
-    feb: 'Feb', february: 'Feb',
-    mar: 'Mar', march: 'Mar',
-    apr: 'Apr', april: 'Apr',
-    may: 'May',
+    jun: 'Jun', june: 'Jun', jul: 'Jul', july: 'Jul', aug: 'Aug', august: 'Aug',
+    sep: 'Sep', sept: 'Sep', september: 'Sep', oct: 'Oct', october: 'Oct',
+    nov: 'Nov', november: 'Nov', dec: 'Dec', december: 'Dec',
+    jan: 'Jan', january: 'Jan', feb: 'Feb', february: 'Feb',
+    mar: 'Mar', march: 'Mar', apr: 'Apr', april: 'Apr', may: 'May',
   };
   const matchedMonth = monthAliasMap[monthLower];
-
   if (!matchedMonth) {
-    errors.push(
-      `Fee Change Slot ${slotNumber}: "${monthStr}" is not a recognized month. Use Jun, Jul, Aug, Sep, Oct, Nov, Dec, Jan, Feb, Mar, Apr, or May.`
-    );
+    errors.push(`Fee Change Slot ${slotNumber}: "${monthStr}" is not a valid month. Use Jun, Jul, Aug, Sep, Oct, Nov, Dec, Jan, Feb, Mar, Apr, May.`);
     return null;
   }
-
   return { newFee: roundedFee, effectiveFromMonth: matchedMonth };
 }
 
-/**
- * Validates a list of parsed fee-change slots for chronological order,
- * no gaps, and no duplicate months. Mutates nothing; returns cleaned list + errors.
- */
-function validateFeeChangeSequence(
-  slots: (FeeChange | null)[],
-  errors: string[]
-): FeeChange[] {
-  // Enforce "no gaps": slot 2 can't be filled if slot 1 is blank, etc.
+function validateFeeChangeSequence(slots: (FeeChange | null)[], errors: string[]): FeeChange[] {
   let sawBlank = false;
   for (let i = 0; i < slots.length; i++) {
-    if (slots[i] === null) {
-      sawBlank = true;
-    } else if (sawBlank) {
-      errors.push(
-        `Fee Change Slot ${i + 1} is filled but an earlier slot was left blank. Fill slots in order (1, then 2, then 3) with no gaps.`
-      );
-    }
+    if (slots[i] === null) sawBlank = true;
+    else if (sawBlank) errors.push(`Fee Change Slot ${i + 1} is filled but earlier slot blank. Fill in order 1,2,3.`);
   }
-
-  const filled = slots.filter((s): s is FeeChange => s !== null);
-
-  // Enforce chronological order + no duplicate months
+  const filled = slots.filter((s): s is FeeChange => s!== null);
   for (let i = 1; i < filled.length; i++) {
     const prevIdx = ACADEMIC_MONTHS.indexOf(filled[i - 1].effectiveFromMonth);
     const currIdx = ACADEMIC_MONTHS.indexOf(filled[i].effectiveFromMonth);
-    if (currIdx === prevIdx) {
-      errors.push(
-        `Fee Change Slots cannot share the same "Effective From" month (duplicate: ${filled[i].effectiveFromMonth}).`
-      );
-    } else if (currIdx < prevIdx) {
-      errors.push(
-        `Fee Change Slots must be in chronological order. Slot ${i + 1} ("${filled[i].effectiveFromMonth}") comes before Slot ${i} ("${filled[i - 1].effectiveFromMonth}").`
-      );
-    }
+    if (currIdx === prevIdx) errors.push(`Duplicate month: ${filled[i].effectiveFromMonth}`);
+    else if (currIdx < prevIdx) errors.push(`Must be chronological: ${filled[i].effectiveFromMonth} comes before ${filled[i - 1].effectiveFromMonth}`);
   }
-
   return filled;
 }
 
-/**
- * Parse an Excel or CSV file buffer into structured rows
- */
 export async function parseExcelOrCsvFile(
   file: File,
   targetAcademicYear: string = '2026-2027',
@@ -203,93 +142,51 @@ export async function parseExcelOrCsvFile(
 ): Promise<ImportParseResult> {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array' });
+  if (!workbook.SheetNames || workbook.SheetNames.length === 0) throw new Error('File has no sheets.');
 
-  if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-    throw new Error('The uploaded file has no sheets or is empty.');
-  }
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rawRows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: false });
+  if (rawRows.length === 0) throw new Error('No data found.');
 
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-
-  const rawRows: any[][] = XLSX.utils.sheet_to_json(sheet, {
-    header: 1,
-    defval: '',
-    blankrows: false,
-  });
-
-  if (rawRows.length === 0) {
-    throw new Error('No data found in the spreadsheet.');
-  }
-
-  // Find header row
   let headerRowIndex = 0;
   for (let i = 0; i < Math.min(10, rawRows.length); i++) {
     const rowStr = rawRows[i].map((c) => String(c).toLowerCase()).join(' ');
-    if (rowStr.includes('student') || rowStr.includes('roll') || rowStr.includes('class') || rowStr.includes('fee')) {
-      headerRowIndex = i;
-      break;
-    }
+    if (rowStr.includes('student') || rowStr.includes('roll') || rowStr.includes('class') || rowStr.includes('fee')) { headerRowIndex = i; break; }
   }
 
   const headers = rawRows[headerRowIndex].map((h) => String(h || '').trim());
   const headerLower = headers.map((h) => h.toLowerCase());
-
   const findCol = (...candidates: string[]): number => {
     for (const c of candidates) {
       const idx = headerLower.findIndex((h) => h === c || h.includes(c));
-      if (idx !== -1) return idx;
+      if (idx!== -1) return idx;
     }
     return -1;
   };
 
-  const sNoCol = findCol('s#', 'serial', 's.no', 'sr#', 'sr no', 's no');
+  const sNoCol = findCol('s#', 'serial', 's.no', 'sr#');
   const classCol = findCol('class', 'grade');
   const rollCol = findCol('roll no', 'roll', 'reg no', 'admission no');
-  const studentNameCol = findCol('student name', 'student', 'name', 'full name');
-  const fatherNameCol = findCol('father name', 'father', 'parent', 'guardian');
+  const studentNameCol = findCol('student name', 'student', 'full name');
+  const fatherNameCol = findCol('father name', 'father', 'parent');
+  const phoneCol = findCol('contact no 1 (phone)', 'contact no 1', 'contact 1', 'phone 1', 'contact no', 'phone', 'mobile');
+  const phoneCol2 = findCol('contact no 2 (phone)', 'contact no 2', 'contact 2', 'phone 2');
+  const feeCol = findCol('monthly fee (pkr)', 'monthly fee', 'm. fee', 'fee (pkr)', 'fee');
+  const newFeeCol1 = findCol('new fee 1'); const effFromCol1 = findCol('effective from 1');
+  const newFeeCol2 = findCol('new fee 2'); const effFromCol2 = findCol('effective from 2');
+  const newFeeCol3 = findCol('new fee 3'); const effFromCol3 = findCol('effective from 3');
 
-  const phoneCol = findCol('contact no 1 (phone)', 'contact no 1', 'contact 1', 'phone 1', 'contact no (phone)', 'contact no', 'phone', 'contact', 'mobile', 'whatsapp');
-  const phoneCol2 = findCol('contact no 2 (phone)', 'contact no 2', 'contact 2', 'phone 2', 'second contact', 'alternate contact');
-
-  const feeCol = findCol('monthly fee (pkr)', 'monthly fee', 'm. fee', 'm.fee', 'fee (pkr)', 'fee');
-
-  // Fee change slots 1-3
-  const newFeeCol1 = findCol('new fee 1', 'new monthly fee 1');
-  const effFromCol1 = findCol('effective from 1');
-  const newFeeCol2 = findCol('new fee 2', 'new monthly fee 2');
-  const effFromCol2 = findCol('effective from 2');
-  const newFeeCol3 = findCol('new fee 3', 'new monthly fee 3');
-  const effFromCol3 = findCol('effective from 3');
-
-  // Month columns
-  const monthCols: Record<AcademicMonth, number> = {
-    Jun: -1, Jul: -1, Aug: -1, Sep: -1, Oct: -1, Nov: -1,
-    Dec: -1, Jan: -1, Feb: -1, Mar: -1, Apr: -1, May: -1,
-  };
-
+  const monthCols: Record<AcademicMonth, number> = { Jun: -1, Jul: -1, Aug: -1, Sep: -1, Oct: -1, Nov: -1, Dec: -1, Jan: -1, Feb: -1, Mar: -1, Apr: -1, May: -1 };
   const monthMap: Record<AcademicMonth, string[]> = {
-    Jun: ['jun', 'june'],
-    Jul: ['jul', 'july'],
-    Aug: ['aug', 'august'],
-    Sep: ['sep', 'sept', 'september'],
-    Oct: ['oct', 'october'],
-    Nov: ['nov', 'november'],
-    Dec: ['dec', 'december'],
-    Jan: ['jan', 'january'],
-    Feb: ['feb', 'february'],
-    Mar: ['mar', 'march'],
-    Apr: ['apr', 'april'],
-    May: ['may'],
+    Jun: ['jun', 'june'], Jul: ['jul', 'july'], Aug: ['aug', 'august'], Sep: ['sep', 'sept', 'september'],
+    Oct: ['oct', 'october'], Nov: ['nov', 'november'], Dec: ['dec', 'december'],
+    Jan: ['jan', 'january'], Feb: ['feb', 'february'], Mar: ['mar', 'march'], Apr: ['apr', 'april'], May: ['may'],
   };
-
   ACADEMIC_MONTHS.forEach((m) => {
     const candidates = monthMap[m];
     for (let c = 0; c < headerLower.length; c++) {
-      const headerText = headerLower[c].trim();
-      if (candidates.some((prefix) => headerText === prefix || headerText.startsWith(prefix))) {
-        monthCols[m] = c;
-        break;
-      }
+      const ht = headerLower[c].trim();
+      if (candidates.some((p) => ht === p || ht.startsWith(p))) { monthCols[m] = c; break; }
     }
   });
 
@@ -297,301 +194,158 @@ export async function parseExcelOrCsvFile(
   const invalidRows: ParsedImportRow[] = [];
   const globalWarnings: string[] = [];
 
-  if (studentNameCol === -1) {
-    globalWarnings.push('Could not find a "Student Name" column. Defaulting to column 3.');
-  }
-
   for (let r = headerRowIndex + 1; r < rawRows.length; r++) {
     const row = rawRows[r];
-    if (!row || row.length === 0 || row.every((c) => String(c).trim() === '')) {
-      continue;
-    }
+    if (!row || row.every((c) => String(c).trim() === '')) continue;
 
     const rowNumber = r + 1;
     const warnings: string[] = [];
     const errors: string[] = [];
 
-    // 1. S#
-    let rawSerial = sNoCol !== -1 ? String(row[sNoCol] || '').trim() : '';
+    let rawSerial = sNoCol!== -1? String(row[sNoCol] || '').trim() : '';
     const serialNo = formatSerialNo(rawSerial, startingSerialIndex + validRows.length);
+    const className = normalizeClassName(classCol!== -1? row[classCol] : '');
+    let rollNo = rollCol!== -1? String(row[rollCol] || '').trim() : '';
+    if (!rollNo) { rollNo = `ETC-${1000 + startingSerialIndex + validRows.length}`; warnings.push(`Auto Roll No: ${rollNo}`); }
+    let studentName = studentNameCol!== -1? String(row[studentNameCol] || '').trim() : String(row[3] || '').trim();
+    if (!studentName) errors.push('Student Name required.');
+    let fatherName = fatherNameCol!== -1? String(row[fatherNameCol] || '').trim() : '';
+    if (!fatherName) { fatherName = 'Guardian'; warnings.push("Father missing -> Guardian"); }
 
-    // 2. Class
-    const rawClass = classCol !== -1 ? row[classCol] : '';
-    const className = normalizeClassName(rawClass);
+    const contactNo = normalizeContactNumber(phoneCol!== -1? row[phoneCol] : '', false) as string;
+    const contactNo2 = normalizeContactNumber(phoneCol2!== -1? row[phoneCol2] : '', true);
 
-    // 3. Roll No
-    let rollNo = rollCol !== -1 ? String(row[rollCol] || '').trim() : '';
-    if (!rollNo) {
-      rollNo = `ETC-${1000 + startingSerialIndex + validRows.length}`;
-      warnings.push(`Auto-generated Roll No: ${rollNo}`);
-    }
-
-    // 4. Student Name
-    let studentName = studentNameCol !== -1 ? String(row[studentNameCol] || '').trim() : '';
-    if (!studentName && row[3]) {
-      studentName = String(row[3]).trim();
-    }
-    if (!studentName) {
-      errors.push('Student Name is required.');
-    }
-
-    // 5. Father Name
-    let fatherName = fatherNameCol !== -1 ? String(row[fatherNameCol] || '').trim() : '';
-    if (!fatherName) {
-      fatherName = 'Guardian';
-      warnings.push("Father's Name missing; defaulted to Guardian");
-    }
-
-    // 6. Contact No 1
-    const rawPhone = phoneCol !== -1 ? row[phoneCol] : '';
-    const contactNo = normalizeContactNumber(rawPhone, false) as string;
-
-    // 6b. Contact No 2
-    const rawPhone2 = phoneCol2 !== -1 ? row[phoneCol2] : '';
-    const contactNo2 = normalizeContactNumber(rawPhone2, true);
-
-    // 7. Monthly Fee (PKR)
-    let rawFee = feeCol !== -1 ? String(row[feeCol] || '').trim() : '';
+    let rawFee = feeCol!== -1? String(row[feeCol] || '').trim() : '';
     let monthlyFee = 5000;
     if (rawFee) {
-      const cleanFee = rawFee.replace(/[^0-9.]/g, '');
-      const parsedFee = parseFloat(cleanFee);
-      if (!isNaN(parsedFee) && parsedFee >= 0) {
-        monthlyFee = Math.round(parsedFee);
-      } else {
-        warnings.push(`Invalid fee "${rawFee}"; defaulted to 5000`);
-      }
+      const parsed = parseFloat(rawFee.replace(/[^0-9.]/g, ''));
+      if (!isNaN(parsed) && parsed >= 0) monthlyFee = Math.round(parsed);
     }
 
-    // 8. Fee change slots (1-3)
-    const slot1 = parseFeeChangeSlot(
-      monthlyFee,
-      newFeeCol1 !== -1 ? row[newFeeCol1] : '',
-      effFromCol1 !== -1 ? row[effFromCol1] : '',
-      1, warnings, errors
-    );
-    const slot2 = parseFeeChangeSlot(
-      monthlyFee,
-      newFeeCol2 !== -1 ? row[newFeeCol2] : '',
-      effFromCol2 !== -1 ? row[effFromCol2] : '',
-      2, warnings, errors
-    );
-    const slot3 = parseFeeChangeSlot(
-      monthlyFee,
-      newFeeCol3 !== -1 ? row[newFeeCol3] : '',
-      effFromCol3 !== -1 ? row[effFromCol3] : '',
-      3, warnings, errors
-    );
+    const slot1 = parseFeeChangeSlot(monthlyFee, newFeeCol1!== -1? row[newFeeCol1] : '', effFromCol1!== -1? row[effFromCol1] : '', 1, warnings, errors);
+    const slot2 = parseFeeChangeSlot(monthlyFee, newFeeCol2!== -1? row[newFeeCol2] : '', effFromCol2!== -1? row[effFromCol2] : '', 2, warnings, errors);
+    const slot3 = parseFeeChangeSlot(monthlyFee, newFeeCol3!== -1? row[newFeeCol3] : '', effFromCol3!== -1? row[effFromCol3] : '', 3, warnings, errors);
     const feeChanges = validateFeeChangeSequence([slot1, slot2, slot3], errors);
 
     const feeForMonth = (month: AcademicMonth): number => {
       const monthIdx = ACADEMIC_MONTHS.indexOf(month);
       let activeFee = monthlyFee;
       for (const change of feeChanges) {
-        if (ACADEMIC_MONTHS.indexOf(change.effectiveFromMonth) <= monthIdx) {
-          activeFee = change.newFee;
-        }
+        if (ACADEMIC_MONTHS.indexOf(change.effectiveFromMonth) <= monthIdx) activeFee = change.newFee;
       }
       return activeFee;
     };
 
-    // 9. Monthly Paid Amounts and Statuses
-    const monthlyAmounts: Record<AcademicMonth, number> = {
-      Jun: 0, Jul: 0, Aug: 0, Sep: 0, Oct: 0, Nov: 0,
-      Dec: 0, Jan: 0, Feb: 0, Mar: 0, Apr: 0, May: 0,
-    };
-    const monthlyStatuses: Record<AcademicMonth, PaymentStatus> = {
-      Jun: 'unpaid', Jul: 'unpaid', Aug: 'unpaid', Sep: 'unpaid', Oct: 'unpaid', Nov: 'unpaid',
-      Dec: 'unpaid', Jan: 'unpaid', Feb: 'unpaid', Mar: 'unpaid', Apr: 'unpaid', May: 'unpaid',
-    };
+    const monthlyAmounts: Record<AcademicMonth, number> = { Jun: 0, Jul: 0, Aug: 0, Sep: 0, Oct: 0, Nov: 0, Dec: 0, Jan: 0, Feb: 0, Mar: 0, Apr: 0, May: 0 };
+    const monthlyStatuses: Record<AcademicMonth, PaymentStatus> = { Jun: 'unpaid', Jul: 'unpaid', Aug: 'unpaid', Sep: 'unpaid', Oct: 'unpaid', Nov: 'unpaid', Dec: 'unpaid', Jan: 'unpaid', Feb: 'unpaid', Mar: 'unpaid', Apr: 'unpaid', May: 'unpaid' };
 
     ACADEMIC_MONTHS.forEach((m) => {
       const colIdx = monthCols[m];
       const expectedFee = feeForMonth(m);
+      if (colIdx!== -1 && row[colIdx]!== undefined && String(row[colIdx]).trim()!== '') {
+        const rawVal = String(row[colIdx]).trim();
+        const upper = rawVal.toUpperCase();
 
-      if (colIdx !== -1 && row[colIdx] !== undefined && row[colIdx] !== null && String(row[colIdx]).trim() !== '') {
-        const rawVal = row[colIdx];
+        // NEW: Handle NEW ADMISSION text from Excel
+        if (upper.includes('NEW') && upper.includes('ADMISSION')) {
+          monthlyStatuses[m] = 'new_admission';
+          monthlyAmounts[m] = 0;
+          return;
+        }
 
-        if (typeof rawVal === 'number') {
-          const amt = Math.max(0, Math.round(rawVal));
+        if (typeof row[colIdx] === 'number') {
+          const amt = Math.max(0, Math.round(row[colIdx] as number));
           monthlyAmounts[m] = amt;
-          if (amt >= expectedFee && expectedFee > 0) monthlyStatuses[m] = 'paid';
-          else if (amt > 0) monthlyStatuses[m] = 'partial';
-          else monthlyStatuses[m] = 'unpaid';
+          monthlyStatuses[m] = amt >= expectedFee && expectedFee > 0? 'paid' : amt > 0? 'partial' : 'unpaid';
         } else {
-          const strVal = String(rawVal).trim();
-          const cleanDigits = strVal.replace(/[^0-9.]/g, '');
-
-          if (cleanDigits.length > 0 && !isNaN(parseFloat(cleanDigits))) {
+          const cleanDigits = rawVal.replace(/[^0-9.]/g, '');
+          if (cleanDigits.length > 0 &&!isNaN(parseFloat(cleanDigits))) {
             const amt = Math.max(0, Math.round(parseFloat(cleanDigits)));
             monthlyAmounts[m] = amt;
-            if (amt >= expectedFee && expectedFee > 0) monthlyStatuses[m] = 'paid';
-            else if (amt > 0) monthlyStatuses[m] = 'partial';
-            else monthlyStatuses[m] = 'unpaid';
+            monthlyStatuses[m] = amt >= expectedFee && expectedFee > 0? 'paid' : amt > 0? 'partial' : 'unpaid';
           } else {
-            const upper = strVal.toUpperCase();
-            if (upper.includes('PAID') || upper === 'P' || upper === 'YES' || upper === 'DONE' || upper === 'CLEARED') {
-              monthlyAmounts[m] = expectedFee;
-              monthlyStatuses[m] = 'paid';
+            if (upper.includes('PAID') || upper === 'P' || upper === 'YES' || upper === 'DONE') {
+              monthlyAmounts[m] = expectedFee; monthlyStatuses[m] = 'paid';
             } else if (upper.includes('PARTIAL') || upper.includes('HALF')) {
-              monthlyAmounts[m] = Math.round(expectedFee / 2);
-              monthlyStatuses[m] = 'partial';
+              monthlyAmounts[m] = Math.round(expectedFee / 2); monthlyStatuses[m] = 'partial';
             } else {
-              monthlyAmounts[m] = 0;
-              monthlyStatuses[m] = 'unpaid';
+              monthlyAmounts[m] = 0; monthlyStatuses[m] = 'unpaid';
             }
           }
         }
       } else {
-        monthlyAmounts[m] = 0;
-        monthlyStatuses[m] = 'unpaid';
+        monthlyAmounts[m] = 0; monthlyStatuses[m] = 'unpaid';
       }
     });
 
     const parsedRow: ParsedImportRow = {
-      rowNumber,
-      serialNo,
-      className,
-      rollNo,
-      studentName,
-      fatherName,
-      contactNo,
-      contactNo2,
-      monthlyFee,
-      discount: 0,
-      feeChanges,
-      monthlyAmounts,
-      monthlyStatuses,
-      isValid: errors.length === 0,
-      warnings,
-      errors,
+      rowNumber, serialNo, className, rollNo, studentName, fatherName,
+      contactNo, contactNo2, monthlyFee, discount: 0, feeChanges,
+      monthlyAmounts, monthlyStatuses, isValid: errors.length === 0, warnings, errors,
     };
-
-    if (parsedRow.isValid) {
-      validRows.push(parsedRow);
-    } else {
-      invalidRows.push(parsedRow);
-    }
+    if (parsedRow.isValid) validRows.push(parsedRow); else invalidRows.push(parsedRow);
   }
 
+  return { fileName: file.name, totalRowsFound: validRows.length + invalidRows.length, validRows, invalidRows, warnings: globalWarnings };
+}
+
+// NEW: Helper to convert parsed Excel row to new StudentRecord with invoices
+export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYear: string = '2026-2027'): any {
+  const invoices = ACADEMIC_MONTHS.map(month => {
+    const status = row.monthlyStatuses[month];
+    const paidAmount = row.monthlyAmounts[month];
+    const expectedFee = (() => {
+      let fee = row.monthlyFee;
+      for (const ch of row.feeChanges) {
+        if (ACADEMIC_MONTHS.indexOf(ch.effectiveFromMonth) <= ACADEMIC_MONTHS.indexOf(month)) fee = ch.newFee;
+      }
+      return fee;
+    })();
+
+    return {
+      month,
+      academicYear,
+      baseFee: expectedFee,
+      concessionAmount: 0,
+      netDue: status === 'new_admission'? 0 : expectedFee,
+      paidAmount: status === 'new_admission'? 0 : paidAmount,
+      status,
+    };
+  });
+
+  const feeSchedules = [
+    { monthlyFee: row.monthlyFee, effectiveFromMonth: 'Jun' as AcademicMonth },
+   ...row.feeChanges.map(fc => ({ monthlyFee: fc.newFee, effectiveFromMonth: fc.effectiveFromMonth }))
+  ];
+
   return {
-    fileName: file.name,
-    totalRowsFound: validRows.length + invalidRows.length,
-    validRows,
-    invalidRows,
-    warnings: globalWarnings,
+    serialNo: row.serialNo,
+    rollNo: row.rollNo,
+    studentName: row.studentName,
+    fatherName: row.fatherName,
+    className: row.className,
+    contactNo: row.contactNo,
+    contactNo2: row.contactNo2,
+    monthlyFee: row.monthlyFee,
+    academicYear,
+    admissionDate: null, // Will be derived from first non-new_admission month
+    feeChanges: row.feeChanges,
+    invoices,
+    feeSchedules,
   };
 }
 
-/**
- * Downloads a sample Excel file matching the current template
- */
 export function downloadSampleImportTemplate(): void {
   const headers = [
-    'S#',
-    'Class',
-    'Roll No',
-    'Student Name',
-    'Father Name',
-    'Contact No 1 (Phone)',
-    'Contact No 2 (Phone)',
-    'Monthly Fee (PKR)',
-    'New Fee 1',
-    'Effective From 1',
-    'New Fee 2',
-    'Effective From 2',
-    'New Fee 3',
-    'Effective From 3',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
+    'S#', 'Class', 'Roll No', 'Student Name', 'Father Name', 'Contact No 1 (Phone)', 'Contact No 2 (Phone)',
+    'Monthly Fee (PKR)', 'New Fee 1', 'Effective From 1', 'New Fee 2', 'Effective From 2', 'New Fee 3', 'Effective From 3',
+    'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May',
   ];
-
   const sampleRows = [
-    [
-      '001', 'Class X', 'ETC-1001', 'Muhammad Hamza', 'Tariq Mehmood',
-      '03001234567', '',
-      6000,
-      6500, 'Sep',
-      7000, 'Nov',
-      '', '',
-      6000, 6000, 6000, 6500, 6500, 7000, 7000, 7000, 7000, 7000, 7000,
-    ],
-    [
-      '002', 'Class IX', 'ETC-1002', 'Ayesha Fatima', 'Nadeem Akhtar',
-      '03219876543', '03211234567',
-      6000,
-      '', '', '', '', '', '',
-      6000, 6000, 6000, 6000, 6000, 6000, 6000, 6000, 0, 0, 0,
-    ],
-    [
-      '003', 'Class VIII', 'ETC-1003', 'Zain Ul Abideen', 'Ghulam Rasool',
-      '03335557788', '',
-      5500,
-      '', '', '', '', '', '',
-      5500, 5500, 5500, 5500, 5500, 5500, 5500, 2750, 0, 0, 0,
-    ],
-    [
-      '004', 'Class VII', 'ETC-1004', 'Fatima Zahra', 'Dr. Shakeel Ahmed',
-      '03451122334', '',
-      5500,
-      '', '', '', '', '', '',
-      5500, 5500, 5500, 5500, 5500, 5500, 5500, 5500, 0, 0, 0,
-    ],
+    ['001', 'Class X', 'ETC-1001', 'Muhammad Hamza', 'Tariq Mehmood', '03001234567', '', 6000, 6500, 'Sep', 7000, 'Nov', '', '', 'NEW ADMISSION', 'NEW ADMISSION', 'NEW ADMISSION', 6500, 6500, 7000, 7000, 7000, 7000, 7000],
+    ['002', 'Class IX', 'ETC-1002', 'Ayesha Fatima', 'Nadeem Akhtar', '03219876543', '03211234567', 6000, '', '', '', '', '', '', 6000, 6000, 6000, 6000, 0, 0, 0, 0],
   ];
-
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
-
-  ws['!cols'] = [
-    { wch: 8 },
-    { wch: 14 },
-    { wch: 12 },
-    { wch: 22 },
-    { wch: 22 },
-    { wch: 20 },
-    { wch: 20 },
-    { wch: 16 },
-    { wch: 12 },
-    { wch: 16 },
-    { wch: 12 },
-    { wch: 16 },
-    { wch: 12 },
-    { wch: 16 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-  ];
-
-  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
-  const textColumns = [0, 5, 6];
-  for (let r = 1; r <= range.e.r; ++r) {
-    for (const colIdx of textColumns) {
-      const cellRef = XLSX.utils.encode_cell({ c: colIdx, r });
-      if (ws[cellRef]) {
-        ws[cellRef].t = 's';
-        ws[cellRef].z = '@';
-      }
-    }
-  }
-
+  const ws = XLSX.utils.aoa_to_sheet([headers,...sampleRows]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Student Fee Ledger');
   XLSX.writeFile(wb, 'Student_Fee_Import_Template.xlsx');

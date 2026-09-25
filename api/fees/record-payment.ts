@@ -7,78 +7,102 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!isAuthenticated) {
     return res.status(401).json({ error: 'Unauthorized: Access Denied' });
   }
-  if (req.method !== 'POST') {
+
+  if (req.method!== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
     const { studentId, month, academicYear, paidAmount } = req.body;
 
-    if (!studentId || !month || !academicYear || paidAmount === undefined) {
-      return res.status(400).json({ error: 'Missing studentId, month, academicYear, or paidAmount' });
+    // Validation
+    if (!studentId ||!month ||!academicYear || paidAmount === undefined) {
+      return res.status(400).json({
+        error: 'Missing required fields: studentId, month, academicYear, paidAmount'
+      });
     }
 
     const numericAmount = Number(paidAmount);
+    if (isNaN(numericAmount) || numericAmount < 0) {
+      return res.status(400).json({ error: 'paidAmount must be a valid number >= 0' });
+    }
 
-    // 1. Update the invoices table
-    await sql`
+    // 1. Fetch current invoice to get net_due and check if it's new_admission
+    const invoiceRes = await sql`
+      SELECT id, net_due, base_fee, status
+      FROM invoices
+      WHERE student_id = ${Number(studentId)}
+        AND month = ${month}
+        AND academic_year = ${academicYear}
+      LIMIT 1;
+    `;
+
+    if (invoiceRes.rows.length === 0) {
+      return res.status(404).json({
+        error: `Invoice not found for student ${studentId}, month ${month}, year ${academicYear}. Run Generate Invoices first.`
+      });
+    }
+
+    const currentInvoice = invoiceRes.rows[0];
+
+    // Prevent payment on NEW_ADMISSION months (admission hasn't happened yet)
+    if (currentInvoice.status === 'new_admission') {
+      return res.status(400).json({
+        error: `Cannot record payment for ${month}: Student has NEW ADMISSION status (joined after this month)`
+      });
+    }
+
+    const netDue = Number(currentInvoice.net_due);
+
+    // 2. Calculate new status based on paid amount vs net_due
+    let newStatus: 'paid' | 'partial' | 'unpaid';
+    if (numericAmount >= netDue && netDue > 0) {
+      newStatus = 'paid';
+    } else if (numericAmount > 0) {
+      newStatus = 'partial';
+    } else {
+      newStatus = 'unpaid';
+    }
+
+    // 3. Update ONLY invoices table - Single source of truth
+    const updateRes = await sql`
       UPDATE invoices
       SET
         paid_amount = ${numericAmount},
-        status = CASE
-          WHEN ${numericAmount} >= net_due THEN 'paid'
-          WHEN ${numericAmount} > 0 THEN 'partial'
-          ELSE 'unpaid'
-        END,
+        status = ${newStatus},
         updated_at = now()
-      WHERE student_id = ${studentId}
+      WHERE student_id = ${Number(studentId)}
         AND month = ${month}
-        AND academic_year = ${academicYear};
+        AND academic_year = ${academicYear}
+      RETURNING
+        id, student_id, academic_year, month, base_fee,
+        concession_amount, net_due, paid_amount, status;
     `;
 
-    // 2. Keep the student's data JSON column in sync as well
-    const studentQuery = await sql`SELECT data FROM students WHERE id = ${studentId};`;
-    if (studentQuery.rows.length > 0) {
-      const studentData = studentQuery.rows[0].data || {};
+    const updatedInvoice = updateRes.rows[0];
 
-      const derivedStatus =
-        numericAmount > 0
-          ? numericAmount >= (studentData.monthlyFee || 0)
-            ? 'paid'
-            : 'partial'
-          : 'unpaid';
+    // 4. Return updated invoice for instant UI update
+    return res.status(200).json({
+      success: true,
+      invoice: {
+        id: updatedInvoice.id,
+        studentId: updatedInvoice.student_id,
+        academicYear: updatedInvoice.academic_year,
+        month: updatedInvoice.month,
+        baseFee: Number(updatedInvoice.base_fee),
+        concessionAmount: Number(updatedInvoice.concession_amount),
+        netDue: Number(updatedInvoice.net_due),
+        paidAmount: Number(updatedInvoice.paid_amount),
+        status: updatedInvoice.status
+      },
+      message: `Payment updated: ${month} is now ${newStatus} (Rs. ${numericAmount})`
+    });
 
-      // Update root-level maps
-      studentData.monthlyAmountsPaid = {
-        ...(studentData.monthlyAmountsPaid || {}),
-        [month]: numericAmount,
-      };
-      studentData.monthlyStatus = {
-        ...(studentData.monthlyStatus || {}),
-        [month]: derivedStatus,
-      };
-
-      // Update yearly session-nested maps
-      if (!studentData.yearlyAmountsPaid) studentData.yearlyAmountsPaid = {};
-      if (!studentData.yearlyAmountsPaid[academicYear]) studentData.yearlyAmountsPaid[academicYear] = {};
-      studentData.yearlyAmountsPaid[academicYear][month] = numericAmount;
-
-      if (!studentData.yearlyStatus) studentData.yearlyStatus = {};
-      if (!studentData.yearlyStatus[academicYear]) studentData.yearlyStatus[academicYear] = {};
-      studentData.yearlyStatus[academicYear][month] = derivedStatus;
-
-      await sql`
-        UPDATE students
-        SET
-          data = ${JSON.stringify(studentData)}::jsonb,
-          updated_at = now()
-        WHERE id = ${studentId};
-      `;
-    }
-
-    return res.status(200).json({ success: true, studentId, month, academicYear, paidAmount: numericAmount });
   } catch (error: any) {
     console.error('Record Payment Error:', error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    return res.status(500).json({
+      error: error.message || 'Internal Server Error',
+      details: process.env.NODE_ENV === 'development'? error.stack : undefined
+    });
   }
 }

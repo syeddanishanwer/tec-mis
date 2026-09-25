@@ -1,17 +1,15 @@
 import { sql } from '@vercel/postgres';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyAuth } from './fees/_auth.js';
 
-const ACADEMIC_MONTHS = [
-  'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'
-] as const;
+const ACADEMIC_MONTHS = ['Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'] as const;
+type AcademicMonth = typeof ACADEMIC_MONTHS[number];
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   const isAuthenticated = await verifyAuth(req);
   if (!isAuthenticated) return res.status(401).json({ error: 'Unauthorized: Access Denied' });
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method!== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { students, academicYear } = req.body;
+  const { students, academicYear } = req.body as { students: any[]; academicYear: string };
 
   if (!Array.isArray(students)) {
     return res.status(400).json({ error: 'Invalid payload: students array expected' });
@@ -23,72 +21,98 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await sql`BEGIN`;
 
-    // Wipe students for this academic year (cascades to student_fee_schedules & invoices)
+    // Wipe students for this academic year - invoices and schedules cascade via FK
+    // Explicit delete first to avoid FK violation if no CASCADE
+    await sql`DELETE FROM invoices WHERE academic_year = ${academicYear};`;
+    await sql`DELETE FROM student_fee_schedules WHERE academic_year = ${academicYear};`;
     await sql`DELETE FROM students WHERE academic_year = ${academicYear};`;
 
     for (const student of students) {
-      // 1. Insert student profile into relational columns
+      const admissionMonth = (student.admissionMonth as AcademicMonth) || 'Jun';
+      const admissionIdx = ACADEMIC_MONTHS.indexOf(admissionMonth);
+
+      // Minimal data - DO NOT store monthlyAmountsPaid, yearlyStatus
+      const minimalData = {
+        className: student.className,
+        contactNo: student.contactNo,
+      };
+
       const studentResult = await sql`
         INSERT INTO students (
           serial_no, roll_no, student_name, father_name,
           class_name, contact_no, contact_no_2, academic_year, admission_date, data
         )
         VALUES (
-          ${student.serialNo ?? null}, ${student.rollNo},
+          ${student.serialNo?? null}, ${student.rollNo},
           ${student.studentName}, ${student.fatherName}, ${student.className},
-          ${student.contactNo ?? null}, ${student.contactNo2 ?? null}, ${academicYear},
-          ${student.admissionDate ?? new Date().toISOString().split('T')[0]},
-          ${JSON.stringify(student)}::jsonb
+          ${student.contactNo?? null}, ${student.contactNo2?? null}, ${academicYear},
+          ${student.admissionDate?? new Date().toISOString().split('T')[0]},
+          ${JSON.stringify(minimalData)}::jsonb
         )
         RETURNING id;
       `;
       const studentId = studentResult.rows[0].id;
 
-      // 2. Baseline fee schedule, effective from Jun
-      await sql`
-        INSERT INTO student_fee_schedules (student_id, monthly_fee, concession, effective_from_month, academic_year)
-        VALUES (${studentId}, ${student.monthlyFee ?? 0}, ${student.discount || 0}, 'Jun', ${academicYear});
-      `;
+      // Fee changes from parser
+      const feeChanges: Array<{ newFee: number; effectiveFromMonth: AcademicMonth }> = student.feeChanges || [];
+      const baseFee = Number(student.monthlyFee?? 0);
 
-      // 3. One schedule row per confirmed fee change (0 to 3 entries, already validated by the parser)
-      const feeChanges: Array<{ newFee: number; effectiveFromMonth: string }> = student.feeChanges || [];
-      for (const change of feeChanges) {
+      // Baseline Jun
+      if (baseFee > 0) {
         await sql`
-          INSERT INTO student_fee_schedules (student_id, monthly_fee, concession, effective_from_month, academic_year)
-          VALUES (${studentId}, ${change.newFee}, ${student.discount || 0}, ${change.effectiveFromMonth}, ${academicYear});
+          INSERT INTO student_fee_schedules (student_id, monthly_fee, effective_from_month, academic_year)
+          VALUES (${studentId}, ${baseFee}, 'Jun', ${academicYear})
+          ON CONFLICT (student_id, academic_year, effective_from_month) DO UPDATE SET monthly_fee = EXCLUDED.monthly_fee;
         `;
       }
 
-      // 4. Build the same "fee active in month X" resolver used by the parser,
-      //    so invoices match exactly what the parser used to derive paid status.
+      // Additional changes (Sep 5500 etc)
+      for (const change of feeChanges) {
+        if (change.effectiveFromMonth === 'Jun') continue; // Already inserted
+        await sql`
+          INSERT INTO student_fee_schedules (student_id, monthly_fee, effective_from_month, academic_year)
+          VALUES (${studentId}, ${Number(change.newFee)}, ${change.effectiveFromMonth}, ${academicYear})
+          ON CONFLICT (student_id, academic_year, effective_from_month) DO UPDATE SET monthly_fee = EXCLUDED.monthly_fee;
+        `;
+      }
+
       const feeForMonth = (month: string): number => {
-        const monthIdx = ACADEMIC_MONTHS.indexOf(month as any);
-        let activeFee = student.monthlyFee ?? 0;
+        const monthIdx = ACADEMIC_MONTHS.indexOf(month as AcademicMonth);
+        let activeFee = baseFee;
         for (const change of feeChanges) {
-          if (ACADEMIC_MONTHS.indexOf(change.effectiveFromMonth as any) <= monthIdx) {
-            activeFee = change.newFee;
+          if (ACADEMIC_MONTHS.indexOf(change.effectiveFromMonth) <= monthIdx) {
+            activeFee = Number(change.newFee);
           }
         }
         return activeFee;
       };
 
-      // 5. Populate invoices for Jun through May using the correct month-by-month fee
+      // FIXED: Populate invoices with NEW ADMISSION support
       for (const month of ACADEMIC_MONTHS) {
-        const paidAmt = student.monthlyAmountsPaid?.[month] ?? 0; 
-        const expectedFee = feeForMonth(month);
-        const concession = student.discount || 0;
-        const netDue = expectedFee - concession;
+        const monthIdx = ACADEMIC_MONTHS.indexOf(month as AcademicMonth);
+        const isBeforeAdmission = monthIdx < admissionIdx;
 
-        const status = paidAmt >= netDue && netDue > 0 ? 'paid' : paidAmt > 0 ? 'partial' : 'unpaid';
+        if (isBeforeAdmission) {
+          // NEW ADMISSION - 0 due, excluded from totals
+          await sql`
+            INSERT INTO invoices (student_id, academic_year, month, base_fee, concession_amount, net_due, paid_amount, status)
+            VALUES (${studentId}, ${academicYear}, ${month}, 0, 0, 0, 0, 'new_admission');
+          `;
+        } else {
+          const paidAmt = Number(student.monthlyAmountsPaid?.[month]?? 0);
+          const expectedFee = feeForMonth(month);
+          const concession = Number(student.discount || 0);
+          const netDue = Math.max(0, expectedFee - concession);
 
-        await sql`
-          INSERT INTO invoices (
-            student_id, academic_year, month, base_fee, concession_amount, net_due, paid_amount, status
-          )
-          VALUES (
-            ${studentId}, ${academicYear}, ${month}, ${expectedFee}, ${concession}, ${netDue}, ${paidAmt}, ${status}
-          );
-        `;
+          let status: string = 'unpaid';
+          if (paidAmt >= netDue && netDue > 0) status = 'paid';
+          else if (paidAmt > 0) status = 'partial';
+
+          await sql`
+            INSERT INTO invoices (student_id, academic_year, month, base_fee, concession_amount, net_due, paid_amount, status)
+            VALUES (${studentId}, ${academicYear}, ${month}, ${expectedFee}, ${concession}, ${netDue}, ${paidAmt}, ${status});
+          `;
+        }
       }
     }
 
