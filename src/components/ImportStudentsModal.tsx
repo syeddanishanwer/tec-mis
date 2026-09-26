@@ -83,27 +83,27 @@ export const ImportStudentsModal: React.FC<Props> = ({
     let updatedCount = 0;
     let addedCount = 0;
 
-const newStudentRecords: any[] = parsedValidRows.map((row) => {
-  const existingMatch = existingStudents.find(
-    s =>
-      (row.rollNo && s.rollNo && s.rollNo.trim().toLowerCase() === row.rollNo.trim().toLowerCase()) ||
-      (row.serialNo && s.serialNo && s.serialNo.trim().toLowerCase() === row.serialNo.trim().toLowerCase()) ||
-      (s.studentName.trim().toLowerCase() === row.studentName.trim().toLowerCase() &&
-        s.fatherName.trim().toLowerCase() === row.fatherName.trim().toLowerCase())
-  );
+    const newStudentRecords: any[] = parsedValidRows.map((row) => {
+      const existingMatch = existingStudents.find(
+        s =>
+          (row.rollNo && s.rollNo && s.rollNo.trim().toLowerCase() === row.rollNo.trim().toLowerCase()) ||
+          (row.serialNo && s.serialNo && s.serialNo.trim().toLowerCase() === row.serialNo.trim().toLowerCase()) ||
+          (s.studentName.trim().toLowerCase() === row.studentName.trim().toLowerCase() &&
+            s.fatherName.trim().toLowerCase() === row.fatherName.trim().toLowerCase())
+      );
 
-  if (existingMatch) updatedCount++; else addedCount++;
+      if (existingMatch) updatedCount++; else addedCount++;
 
-  const recordId = strategy === 'update_or_add' && existingMatch? existingMatch.id : nextId++;
+      const recordId = strategy === 'update_or_add' && existingMatch ? existingMatch.id : nextId++;
 
-  const converted = convertParsedRowToStudentRecord(row, targetYear);
+      const converted = convertParsedRowToStudentRecord(row, targetYear);
 
-  return {
-    ...converted,
-    id: recordId,
-    admissionDate: existingMatch ? existingMatch.admissionDate : new Date().toISOString().split('T')[0],
-  };
-});
+      return {
+        ...converted,
+        id: recordId,
+        admissionDate: existingMatch ? existingMatch.admissionDate : new Date().toISOString().split('T')[0],
+      };
+    });
     onImportSuccess(
       newStudentRecords as StudentRecord[],
       strategy,

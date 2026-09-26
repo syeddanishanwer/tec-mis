@@ -184,7 +184,7 @@ export const AddStudentModal: React.FC<Props> = ({
                 return <div key={m} className={`px-1.5 py-1 rounded text-center ${isNewAdm? 'bg-white text-black font-bold' : 'bg-neutral-700 text-white'}`}>{m}: {isNewAdm? 'NEW ADMISSION' : `Rs. ${Math.max(0, monthlyFee - discount).toLocaleString()}`}</div>;
               })}
             </div>
-            <div className="mt-2 text- text-neutral-400">Total Billed for session: Rs. {(ACADEMIC_MONTHS.length - ACADEMIC_MONTHS.indexOf(selectedAdmissionMonth)) * Math.max(0, monthlyFee - discount)} (not Rs. {ACADEMIC_MONTHS.length * Math.max(0, monthlyFee - discount)}). Excludes NEW ADMISSION months.</div>
+            <div className="mt-2 text- text-neutral-400">Total Billed for session: Rs. {(ACADEMIC_MONTHS.length - ACADEMIC_MONTHS.indexOf(selectedAdmissionMonth)) * Math.max(0, monthlyFee - discount)} (not Rs. {ACADEMIC_MONTHS.length * Math.max(0, monthlyFee - discount)}).</div>
           </div>
 
           <div className="pt-3 flex justify-end gap-2 border-t border-neutral-200">
