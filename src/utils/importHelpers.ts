@@ -1,7 +1,6 @@
 import * as XLSX from 'xlsx';
 import { StudentRecord, SchoolClass, AcademicMonth, ACADEMIC_MONTHS, PaymentStatus, FeeSchedule, Invoice } from '../types';
 
-// FIXED: Local constants - no mockStudents import
 export const ALL_CLASSES: SchoolClass[] = [
   'Reception', 'Junior', 'Senior',
   'Class I', 'Class II', 'Class III', 'Class IV', 'Class V',
@@ -33,6 +32,8 @@ export interface ParsedImportRow {
   feeChanges: FeeChange[];
   monthlyAmounts: Record<AcademicMonth, number>;
   monthlyStatuses: Record<AcademicMonth, PaymentStatus>;
+  admissionMonth: AcademicMonth;
+  admissionDate: string;
   isValid: boolean;
   warnings: string[];
   errors: string[];
@@ -239,20 +240,18 @@ export async function parseExcelOrCsvFile(
     const monthlyAmounts: Record<AcademicMonth, number> = { Jun: 0, Jul: 0, Aug: 0, Sep: 0, Oct: 0, Nov: 0, Dec: 0, Jan: 0, Feb: 0, Mar: 0, Apr: 0, May: 0 };
     const monthlyStatuses: Record<AcademicMonth, PaymentStatus> = { Jun: 'unpaid', Jul: 'unpaid', Aug: 'unpaid', Sep: 'unpaid', Oct: 'unpaid', Nov: 'unpaid', Dec: 'unpaid', Jan: 'unpaid', Feb: 'unpaid', Mar: 'unpaid', Apr: 'unpaid', May: 'unpaid' };
 
+    // FIXED: First pass - parse raw Excel values
     ACADEMIC_MONTHS.forEach((m) => {
       const colIdx = monthCols[m];
       const expectedFee = feeForMonth(m);
       if (colIdx!== -1 && row[colIdx]!== undefined && String(row[colIdx]).trim()!== '') {
         const rawVal = String(row[colIdx]).trim();
         const upper = rawVal.toUpperCase();
-
-        // NEW: Handle NEW ADMISSION text from Excel
         if (upper.includes('NEW') && upper.includes('ADMISSION')) {
           monthlyStatuses[m] = 'new_admission';
           monthlyAmounts[m] = 0;
           return;
         }
-
         if (typeof row[colIdx] === 'number') {
           const amt = Math.max(0, Math.round(row[colIdx] as number));
           monthlyAmounts[m] = amt;
@@ -278,10 +277,55 @@ export async function parseExcelOrCsvFile(
       }
     });
 
+   // FIXED: Second pass - auto-fill NEW ADMISSION - TS safe with type assertion
+    let admissionIdx = 0;
+    for (let i = 0; i < ACADEMIC_MONTHS.length; i++) {
+      const m = ACADEMIC_MONTHS[i];
+      const status = monthlyStatuses[m] as PaymentStatus;
+      const isNewAdmission = (status as string) === 'new_admission';
+
+      if (!isNewAdmission && (monthlyAmounts[m] > 0 || i === 0)) {
+        if (i > 0 && status === 'unpaid' && monthlyAmounts[m] === 0) {
+          const hasLaterPaid = ACADEMIC_MONTHS.slice(i).some(mm => {
+            const s = monthlyStatuses[mm] as PaymentStatus;
+            return monthlyAmounts[mm] > 0 || s === 'paid' || s === 'partial';
+          });
+          const hasExplicitNewAdmissionBefore = ACADEMIC_MONTHS.slice(0, i).some(mm => {
+            return (monthlyStatuses[mm] as string) === 'new_admission';
+          });
+          if (hasExplicitNewAdmissionBefore && hasLaterPaid) {
+            monthlyStatuses[m] = 'new_admission' as PaymentStatus;
+            continue;
+          }
+        }
+        admissionIdx = i;
+        break;
+      }
+      if (isNewAdmission) {
+        admissionIdx = i + 1;
+      }
+    }
+    // Force all months before admissionIdx to new_admission
+    for (let i = 0; i < admissionIdx; i++) {
+      const m = ACADEMIC_MONTHS[i];
+      if ((monthlyStatuses[m] as string)!== 'new_admission') {
+        monthlyStatuses[m] = 'new_admission' as PaymentStatus;
+        monthlyAmounts[m] = 0;
+      }
+    }
+
+    const admissionMonth = ACADEMIC_MONTHS[admissionIdx];
+    const yearStart = parseInt(targetAcademicYear.split('-')[0]);
+    const monthToNum: Record<string, number> = { Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11, Jan:0, Feb:1, Mar:2, Apr:3, May:4 };
+    const jsMonth = monthToNum[admissionMonth];
+    const admYear = jsMonth >=5? yearStart : yearStart+1;
+    const admissionDate = `${admYear}-${String(jsMonth+1).padStart(2,'0')}-01`;
+
     const parsedRow: ParsedImportRow = {
       rowNumber, serialNo, className, rollNo, studentName, fatherName,
       contactNo, contactNo2, monthlyFee, discount: 0, feeChanges,
-      monthlyAmounts, monthlyStatuses, isValid: errors.length === 0, warnings, errors,
+      monthlyAmounts, monthlyStatuses, admissionMonth, admissionDate,
+      isValid: errors.length === 0, warnings, errors,
     };
     if (parsedRow.isValid) validRows.push(parsedRow); else invalidRows.push(parsedRow);
   }
@@ -289,7 +333,6 @@ export async function parseExcelOrCsvFile(
   return { fileName: file.name, totalRowsFound: validRows.length + invalidRows.length, validRows, invalidRows, warnings: globalWarnings };
 }
 
-// NEW: Helper to convert parsed Excel row to new StudentRecord with invoices
 export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYear: string = '2026-2027'): any {
   const invoices = ACADEMIC_MONTHS.map(month => {
     const status = row.monthlyStatuses[month];
@@ -315,7 +358,7 @@ export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYe
 
   const feeSchedules = [
     { monthlyFee: row.monthlyFee, effectiveFromMonth: 'Jun' as AcademicMonth },
-   ...row.feeChanges.map(fc => ({ monthlyFee: fc.newFee, effectiveFromMonth: fc.effectiveFromMonth }))
+  ...row.feeChanges.map(fc => ({ monthlyFee: fc.newFee, effectiveFromMonth: fc.effectiveFromMonth }))
   ];
 
   return {
@@ -328,8 +371,10 @@ export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYe
     contactNo2: row.contactNo2,
     monthlyFee: row.monthlyFee,
     academicYear,
-    admissionDate: null, // Will be derived from first non-new_admission month
+    admissionDate: row.admissionDate,
+    admissionMonth: row.admissionMonth,
     feeChanges: row.feeChanges,
+    monthlyAmountsPaid: row.monthlyAmounts,
     invoices,
     feeSchedules,
   };
@@ -342,8 +387,8 @@ export function downloadSampleImportTemplate(): void {
     'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May',
   ];
   const sampleRows = [
-    ['001', 'Class X', 'ETC-1001', 'Muhammad Hamza', 'Tariq Mehmood', '03001234567', '', 6000, 6500, 'Sep', 7000, 'Nov', '', '', 'NEW ADMISSION', 'NEW ADMISSION', 'NEW ADMISSION', 6500, 6500, 7000, 7000, 7000, 7000, 7000],
-    ['002', 'Class IX', 'ETC-1002', 'Ayesha Fatima', 'Nadeem Akhtar', '03219876543', '03211234567', 6000, '', '', '', '', '', '', 6000, 6000, 6000, 6000, 0, 0, 0, 0],
+    ['001', 'Class X', 'ETC-1001', 'Muhammad Hamza', 'Tariq Mehmood', '03001234567', '', 6000, 6500, 'Sep', 7000, 'Nov', '', '', 'NEW ADMISSION', 'NEW ADMISSION', 'NEW ADMISSION', 6500, 6500, 7000, 7000, 7000, 7000],
+    ['002', 'Class IX', 'ETC-1002', 'Ayesha Fatima', 'Nadeem Akhtar', '03219876543', '03211234567', 6000, '', '', '', '', '', '', 6000, 6000, 6000, 6000, 0, 0, 0, 0, 0, 0, 0, 0],
   ];
   const ws = XLSX.utils.aoa_to_sheet([headers,...sampleRows]);
   const wb = XLSX.utils.book_new();

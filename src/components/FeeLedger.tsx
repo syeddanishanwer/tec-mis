@@ -3,7 +3,6 @@ import { StudentRecord, SchoolClass, AcademicMonth, ACADEMIC_MONTHS, PaymentStat
 import { exportToCSV, exportToExcel, printFeeLedger } from '../utils/exportHelpers';
 import { FileSpreadsheet, FileText, Printer, Search, Filter, Plus, ArrowUpDown, CreditCard, Phone, Pencil, Trash2, Upload, RefreshCw } from 'lucide-react';
 
-// Local constants - no more mockStudents import
 const ALL_CLASSES: SchoolClass[] = ['Reception','Junior','Senior','Class I','Class II','Class III','Class IV','Class V','Class VI','Class VII','Class VIII','Class IX','Class X'];
 
 const formatPhoneDisplay = (phone?: string) => {
@@ -81,16 +80,22 @@ export const FeeLedger: React.FC<Props> = ({
     }
   };
 
-  // Build invoiceMap from students[].invoices - SINGLE SOURCE OF TRUTH
+  // FIXED: include academicYear in key to support old+revised fees
   const invoiceMap = useMemo(() => {
     const map = new Map<string, Invoice>();
     students.forEach(s => {
       s.invoices?.forEach(inv => {
-        map.set(`${s.id}_${inv.month}`, inv);
+        if (inv.academicYear === activeAcademicYear) {
+          map.set(`${s.id}_${inv.academicYear}_${inv.month}`, inv);
+        }
       });
     });
     return map;
-  }, [students]);
+  }, [students, activeAcademicYear]);
+
+  const getInv = (studentId: number, month: AcademicMonth): Invoice | undefined => {
+    return invoiceMap.get(`${studentId}_${activeAcademicYear}_${month}`);
+  };
 
   const handleStartEditAmount = (studentId: number, month: AcademicMonth, currentAmount: number) => {
     setEditingCell({ studentId, month });
@@ -111,10 +116,10 @@ export const FeeLedger: React.FC<Props> = ({
 
   const filteredStudents = useMemo(() => {
     return students
-     .filter(s => {
+    .filter(s => {
         if (selectedClass!== 'ALL' && s.className!== selectedClass) return false;
         if (selectedStatus!== 'ALL') {
-          const inv = invoiceMap.get(`${s.id}_${activeReminderMonth}`);
+          const inv = getInv(s.id, activeReminderMonth);
           if (!inv || inv.status!== selectedStatus) return false;
         }
         if (searchQuery.trim()) {
@@ -123,7 +128,7 @@ export const FeeLedger: React.FC<Props> = ({
         }
         return true;
       })
-     .sort((a, b) => {
+    .sort((a, b) => {
         if (sortField === 'id') {
           const numA = parseInt(a.serialNo || String(a.id), 10) || 0;
           const numB = parseInt(b.serialNo || String(b.id), 10) || 0;
@@ -135,8 +140,8 @@ export const FeeLedger: React.FC<Props> = ({
           const getDue = (s: StudentRecord) => {
             let c = 0, d = 0;
             visibleMonths.forEach(m => {
-              const inv = invoiceMap.get(`${s.id}_${m}`);
-              if (!inv || inv.status === 'new_admission') return;
+              const inv = getInv(s.id, m as AcademicMonth);
+              if (!inv || (inv.status as string) === 'new_admission') return;
               c += Number(inv.paidAmount);
               d += Math.max(0, Number(inv.netDue) - Number(inv.paidAmount));
             });
@@ -146,15 +151,15 @@ export const FeeLedger: React.FC<Props> = ({
         }
         return 0;
       });
-  }, [students, selectedClass, selectedStatus, searchQuery, activeReminderMonth, sortField, sortAsc, invoiceMap, visibleMonths]);
+  }, [students, selectedClass, selectedStatus, searchQuery, activeReminderMonth, sortField, sortAsc, invoiceMap, visibleMonths, activeAcademicYear]);
 
   const ledgerTotals = useMemo(() => {
     let billed = 0, collected = 0, due = 0, fullClearCount = 0, overdueCount = 0;
     filteredStudents.forEach(student => {
       let studentDue = 0;
       visibleMonths.forEach(m => {
-        const inv = invoiceMap.get(`${student.id}_${m}`);
-        if (!inv || inv.status === 'new_admission') return;
+        const inv = getInv(student.id, m as AcademicMonth);
+        if (!inv || (inv.status as string) === 'new_admission') return;
         billed += Number(inv.netDue);
         collected += Number(inv.paidAmount);
         const invDue = Math.max(0, Number(inv.netDue) - Number(inv.paidAmount));
@@ -165,7 +170,7 @@ export const FeeLedger: React.FC<Props> = ({
     });
     const rate = billed > 0? Math.round((collected / billed) * 100) : 0;
     return { billed, collected, due, fullClearCount, overdueCount, rate };
-  }, [filteredStudents, visibleMonths, invoiceMap]);
+  }, [filteredStudents, visibleMonths, invoiceMap, activeAcademicYear]);
 
   interface GroupTotals {
     monthlyFee: number; discounts: number; netMonthlyFee: number;
@@ -182,8 +187,8 @@ export const FeeLedger: React.FC<Props> = ({
       const currentFee = s.feeSchedules?.length? s.feeSchedules[s.feeSchedules.length - 1].monthlyFee : 0;
       monthlyFee += currentFee;
       visibleMonths.forEach(m => {
-        const inv = invoiceMap.get(`${s.id}_${m}`);
-        if (!inv || inv.status === 'new_admission') return;
+        const inv = getInv(s.id, m as AcademicMonth);
+        if (!inv || (inv.status as string) === 'new_admission') return;
         const paid = Number(inv.paidAmount) || 0;
         const dueAmt = Math.max(0, Number(inv.netDue) - paid);
         monthsMap[m].collected += paid;
@@ -207,17 +212,17 @@ export const FeeLedger: React.FC<Props> = ({
       groups.push({ className: cName, students: cStudents, totals: computeTotalsForStudents(cStudents) });
     });
     return groups;
-  }, [filteredStudents, visibleMonths, invoiceMap]);
+  }, [filteredStudents, visibleMonths, invoiceMap, activeAcademicYear]);
 
-  const overallTotals = useMemo(() => computeTotalsForStudents(filteredStudents), [filteredStudents, visibleMonths, invoiceMap]);
+  const overallTotals = useMemo(() => computeTotalsForStudents(filteredStudents), [filteredStudents, visibleMonths, invoiceMap, activeAcademicYear]);
 
   const handleSort = (field: any) => {
     if (sortField === field) setSortAsc(!sortAsc);
     else { setSortField(field); setSortAsc(field === 'collected' || field === 'total'? false : true); }
   };
 
-  const getStatusBadge = (status: PaymentStatus, studentId: number, month: AcademicMonth, amount: number) => {
-    if (status === 'new_admission') {
+  const getStatusBadge = (status: PaymentStatus, studentId: number, month: AcademicMonth, paidAmount: number, netDue: number) => {
+    if ((status as string) === 'new_admission') {
       return <span className="bg-black text-white px-2 py-1 rounded text- font-bold">NEW ADMISSION</span>;
     }
     let bg = 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100';
@@ -239,10 +244,11 @@ export const FeeLedger: React.FC<Props> = ({
 
     return (
       <button type="button" onClick={() => onToggleMonthStatus(studentId, month)}
-        title={`${month} • Rs. ${amount}`}
+        onDoubleClick={() => handleStartEditAmount(studentId, month, paidAmount)}
+        title={`${month} • Due: Rs. ${netDue} • Paid: Rs. ${paidAmount} • Double-click to edit`}
         className={`px-1.5 py-1 text- font-semibold rounded-md border cursor-pointer min-w- ${bg}`}>
         {cellDisplayMode === 'status'? <span>{label}</span> : (
-          <div className="leading-tight"><span>{label}</span><span className="block text-[9.5px] font-mono opacity-85">{amount > 0? amount.toLocaleString() : '0'}</span></div>
+          <div className="leading-tight"><span>{label}</span><span className="block text-[9.5px] font-mono opacity-85">{paidAmount > 0? `${paidAmount.toLocaleString()}` : `0 / ${netDue.toLocaleString()}`}</span></div>
         )}
       </button>
     );
@@ -250,7 +256,6 @@ export const FeeLedger: React.FC<Props> = ({
 
   return (
     <div className="space-y-4">
-      {/* Controls */}
       <div className="bg-white p-4 rounded-xl border shadow-xs space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -279,15 +284,13 @@ export const FeeLedger: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-white p-3.5 rounded-xl border"><span className="text- font-semibold text-neutral-500 uppercase block">Billed (Jun-{activeReminderMonth})</span><div className="text-lg font-bold mt-1">Rs. {ledgerTotals.billed.toLocaleString()}</div></div>
         <div className="bg-white p-3.5 rounded-xl border border-emerald-200"><span className="text- font-semibold text-emerald-800 uppercase block">Collected</span><div className="text-lg font-bold text-emerald-700 mt-1">Rs. {ledgerTotals.collected.toLocaleString()}</div><span className="text- text-emerald-600">{ledgerTotals.rate}% recovery</span></div>
         <div className="bg-white p-3.5 rounded-xl border border-red-200"><span className="text- font-semibold text-red-800 uppercase block">Due / Overdue</span><div className="text-lg font-bold text-red-600 mt-1">Rs. {ledgerTotals.due.toLocaleString()}</div><span className="text- text-red-500">{ledgerTotals.overdueCount} students</span></div>
-        <div className="bg-white p-3.5 rounded-xl border border-blue-200"><span className="text- font-semibold text-blue-800 uppercase block">Active Evaluation</span><div className="text-lg font-bold mt-1">Through {activeReminderMonth}</div><span className="text- text-blue-600">{visibleMonths.length} months</span></div>
+        <div className="bg-white p-3.5 rounded-xl border border-blue-200"><span className="text- font-semibold text-blue-800 uppercase block">Active Evaluation</span><div className="text-lg font-bold mt-1">Through {activeReminderMonth}</div><span className="text- text-blue-600">{visibleMonths.length} months • Excludes NEW ADMISSION</span></div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl border overflow-hidden">
         <div className="overflow-x-auto w-full">
           <table className="w-full text-left border-collapse text-xs" style={{ minWidth: `${780 + visibleMonths.length * 68}px` }}>
@@ -315,17 +318,19 @@ export const FeeLedger: React.FC<Props> = ({
                         const displaySNo = formatSerialNo(student.serialNo, globalIdx + 1);
                         let studentCollected = 0, studentDue = 0, studentOverdueCount = 0;
                         visibleMonths.forEach(m => {
-                          const inv = invoiceMap.get(`${student.id}_${m}`);
-                          if (!inv || inv.status === 'new_admission') return;
+                          const inv = getInv(student.id, m as AcademicMonth);
+                          if (!inv || (inv.status as string) === 'new_admission') return;
                           studentCollected += Number(inv.paidAmount);
                           studentDue += Math.max(0, Number(inv.netDue) - Number(inv.paidAmount));
                           if (Number(inv.netDue) - Number(inv.paidAmount) > 0) studentOverdueCount++;
                         });
                         const isCritical = studentOverdueCount >= 3;
-                        const baseFee = student.feeSchedules?.[0]?.monthlyFee || 0;
-                        const currentFeeSch = student.feeSchedules?.[student.feeSchedules.length - 1];
+                        const sortedSchedules = [...(student.feeSchedules || [])].sort((a,b) => ACADEMIC_MONTHS.indexOf(a.effectiveFromMonth) - ACADEMIC_MONTHS.indexOf(b.effectiveFromMonth));
+                        const baseFee = sortedSchedules[0]?.monthlyFee || 0;
+                        const currentFeeSch = sortedSchedules[sortedSchedules.length - 1];
                         const currentFee = currentFeeSch?.monthlyFee || baseFee;
                         const effectiveFrom = currentFeeSch?.effectiveFromMonth;
+                        const hasRevision = baseFee!== currentFee && baseFee > 0;
 
                         return (
                           <tr key={student.id} className={`hover:bg-neutral-50/90 ${isCritical? 'bg-red-50/30' : ''}`}>
@@ -335,16 +340,16 @@ export const FeeLedger: React.FC<Props> = ({
                             <td className="py-2.5 px-3 font-medium whitespace-nowrap">{student.fatherName}</td>
                             <td className="py-2.5 px-3 font-mono text- whitespace-nowrap">{formatPhoneDisplay(student.contactNo)}{student.contactNo2 && <span className="block text-neutral-400">{formatPhoneDisplay(student.contactNo2)}</span>}</td>
                             <td className="py-2.5 px-3 text-right font-semibold whitespace-nowrap">
-                              Rs. {currentFee.toLocaleString()}
+                              <span>Rs. {currentFee.toLocaleString()}</span>
                               {effectiveFrom && <span className="block text- text-blue-600 font-medium">w.e.f {effectiveFrom}</span>}
-                              {baseFee!== currentFee && baseFee > 0 && <span className="block text- text-neutral-500 font-normal">was {baseFee.toLocaleString()}</span>}
+                              {hasRevision && <span className="block text- text-neutral-500 font-normal">was {baseFee.toLocaleString()} w.e.f Jun</span>}
                             </td>
                             {visibleMonths.map(m => {
-                              const inv = invoiceMap.get(`${student.id}_${m}`);
-                              if (!inv || inv.status === 'new_admission') {
+                              const inv = getInv(student.id, m as AcademicMonth);
+                              if (!inv || (inv.status as string) === 'new_admission') {
                                 return <td key={m} className="py-2 px-1 text-center"><span className="bg-black text-white px-2 py-1 rounded text- font-bold">NEW ADMISSION</span></td>;
                               }
-                              return <td key={m} className={`py-2 px-1 text-center ${m === activeReminderMonth? 'bg-blue-50/50' : ''}`}>{getStatusBadge(inv.status as PaymentStatus, student.id, m as AcademicMonth, Number(inv.paidAmount))}</td>;
+                              return <td key={m} className={`py-2 px-1 text-center ${m === activeReminderMonth? 'bg-blue-50/50' : ''}`}>{getStatusBadge(inv.status as PaymentStatus, student.id, m as AcademicMonth, Number(inv.paidAmount), Number(inv.netDue))}</td>;
                             })}
                             <td className="py-2.5 px-3 text-right"><span className="font-bold text-emerald-700 text-xs">Rs. {studentCollected.toLocaleString()}</span></td>
                             <td className="py-2.5 px-3 text-right">{studentDue > 0? <span className="font-bold text-red-600 text-xs">Rs. {studentDue.toLocaleString()}</span> : <span className="font-bold text-emerald-600 text-xs">Rs. 0</span>}{studentOverdueCount > 0 && <span className="block text- text-neutral-400">{studentOverdueCount} mos.</span>}</td>

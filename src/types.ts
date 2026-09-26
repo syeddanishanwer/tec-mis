@@ -163,9 +163,13 @@ export interface FeeSchedule {
 }
 
 export interface Invoice {
-  id?: number; studentId: number; academicYear: string; month: AcademicMonth;
-  baseFee: number; concessionAmount: number; netDue: number; paidAmount: number;
-  status: PaymentStatus; note?: string; createdAt?: string; updatedAt?: string;
+  month: AcademicMonth;
+  academicYear: string;
+  baseFee: number;
+  concessionAmount: number;
+  netDue: number;
+  paidAmount: number;
+  status: PaymentStatus;
 }
 
 export interface StudentRecord {
@@ -185,4 +189,4 @@ export interface StudentRecord {
 export interface PaymentLog { id: string; studentId: number; studentName: string; amount: number; month: AcademicMonth; paymentDate: string; paymentMethod: 'Cash' | 'Bank Transfer' | 'Online/EasyPaisa/JazzCash'; receiptNo: string; collectedBy: string; notes?: string; }
 export interface AgingBucketSummary { bucket: 'current' | '30_days' | '60_days' | '90_plus_days'; label: string; description: string; count: number; totalOutstanding: number; students: StudentRecord[]; }
 export interface MonthlyClassSummary { className: SchoolClass; totalStudents: number; expectedRevenue: number; collectedRevenue: number; pendingRevenue: number; efficiency: number; }
-export interface OneTimeCharge { id?: number; studentId: number; chargeType: string; amount: number; chargeDate: string; paidAmount: number; status: 'paid' | 'partial' | 'unpaid'; isRefundable: boolean; notes?: string; }
+export interface OneTimeCharge { id?: number; studentId: number; chargeType: string; amount: number; chargeDate: string; paidAmount: number; status: 'paid' | 'partial' | 'unpaid' | 'new_admission'; isRefundable: boolean; notes?: string; }
