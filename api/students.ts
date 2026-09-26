@@ -22,15 +22,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             (SELECT json_agg(json_build_object(
               'id', i.id, 'studentId', i.student_id, 'academicYear', i.academic_year,
               'month', i.month, 'baseFee', i.base_fee, 'concessionAmount', i.concession_amount,
-              'netDue', i.net_due, 'paidAmount', i.paid_amount, 'status', i.status,
-              'isWaived', i.is_waived
+              'netDue', i.net_due, 'paidAmount', i.paid_amount, 'status', i.status, 
+              'isWaived', COALESCE(i.is_waived, false)
             ) ORDER BY
               CASE i.month WHEN 'Jun' THEN 1 WHEN 'Jul' THEN 2 WHEN 'Aug' THEN 3 WHEN 'Sep' THEN 4
               WHEN 'Oct' THEN 5 WHEN 'Nov' THEN 6 WHEN 'Dec' THEN 7 WHEN 'Jan' THEN 8 WHEN 'Feb' THEN 9
               WHEN 'Mar' THEN 10 WHEN 'Apr' THEN 11 WHEN 'May' THEN 12 END
-            ) FROM invoices i WHERE i.student_id = s.id AND i.academic_year = s.academic_year),
+            ) FROM invoices i WHERE i.student_id = s.id AND i.academic_year = ${year}),
             '[]'::json
-          ) as invoices,
+          ) AS invoices,
           COALESCE(
             (SELECT json_agg(json_build_object(
               'id', f.id, 'studentId', f.student_id, 'monthlyFee', f.monthly_fee,
@@ -39,7 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               CASE f.effective_from_month WHEN 'Jun' THEN 1 WHEN 'Jul' THEN 2 WHEN 'Aug' THEN 3 WHEN 'Sep' THEN 4
               WHEN 'Oct' THEN 5 WHEN 'Nov' THEN 6 WHEN 'Dec' THEN 7 WHEN 'Jan' THEN 8 WHEN 'Feb' THEN 9
               WHEN 'Mar' THEN 10 WHEN 'Apr' THEN 11 WHEN 'May' THEN 12 END
-            ) FROM student_fee_schedules f WHERE f.student_id = s.id AND f.academic_year = s.academic_year),
+            ) FROM student_fee_schedules f WHERE f.student_id = s.id AND f.academic_year = ${year}),
             '[]'::json
           ) as fee_schedules
         FROM students s
@@ -65,7 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json(students);
     }
 
-    // POST - No more data jsonb monthlyStatus, only minimal data + fee_schedules
+    // POST - Clean relational insert
     if (req.method === 'POST') {
       const { students } = req.body;
       if (!Array.isArray(students)) {
@@ -73,13 +73,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       for (const student of students) {
-        // Minimal jsonb - DO NOT save monthlyStatus, yearlyStatus, monthlyAmountsPaid
         const minimalData = {
           className: student.className,
           contactNo: student.contactNo,
           contactNo2: student.contactNo2,
           fatherName: student.fatherName,
-          // Store only base info, not fee status
         };
 
         const insertRes = await sql`
@@ -102,7 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const studentId = insertRes.rows[0]?.id;
         if (!studentId) continue;
 
-        // 1. Handle base monthlyFee - insert as Jun effective if no feeChanges
+        // 1. Handle base monthlyFee
         const baseFee = Number(student.monthlyFee || student.feeSchedules?.[0]?.monthlyFee || 0);
         if (baseFee > 0) {
           await sql`
@@ -113,7 +111,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           `;
         }
 
-        // 2. Handle feeChanges array (mid-year fee revisions like Sep 5500)
+        // 2. Handle fee revisions
         const changes = student.feeChanges || student.feeSchedules || [];
         if (Array.isArray(changes) && changes.length > 0) {
           for (const change of changes) {
@@ -129,9 +127,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
           }
         }
-
-        // 3. Auto-generate invoices will be handled by /api/fees/generate endpoint
-        // Or you can call it here if needed
       }
 
       return res.status(200).json({ success: true, count: students.length });
@@ -141,7 +136,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { id } = req.query;
       if (!id) return res.status(400).json({ error: 'Missing student id' });
       const sid = Number(id);
-      // Delete related records first (if no CASCADE)
       await sql`DELETE FROM invoices WHERE student_id = ${sid};`;
       await sql`DELETE FROM student_fee_schedules WHERE student_id = ${sid};`;
       await sql`DELETE FROM students WHERE id = ${sid};`;
