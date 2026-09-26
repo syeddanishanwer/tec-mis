@@ -79,8 +79,9 @@ export const FeeLedger: React.FC<Props> = ({
     setEditingFeeCell(null);
   };
 
-  const handleGenerateInvoices = async () => {
+    const handleGenerateInvoices = async () => {
     setIsGenerating(true);
+    setGenerateMessage(null);
     try {
       const res = await fetch('/api/fees/generate', {
         method: 'POST',
@@ -89,11 +90,22 @@ export const FeeLedger: React.FC<Props> = ({
         body: JSON.stringify({ academicYear: activeAcademicYear, month: activeReminderMonth }),
       });
       const data = await res.json();
-      setGenerateMessage(data.message || data.error);
-      setTimeout(() => setGenerateMessage(null), 4000);
-      window.location.reload();
+      
+      if (!res.ok) {
+        setGenerateMessage(`⚠ ${data.error || 'Generate failed'}`);
+      } else if ((data.generatedCount || 0) === 0 && (data.newAdmissionCount || 0) === 0) {
+        // All invoices already exist
+        setGenerateMessage(`✓ Already Generated for ${activeReminderMonth} (${activeAcademicYear}) — No new invoices needed`);
+      } else {
+        setGenerateMessage(`✓ ${data.message}`);
+        // Only reload when something new was actually generated
+        setTimeout(() => window.location.reload(), 1000);
+      }
+      
+      setTimeout(() => setGenerateMessage(null), 5000);
     } catch (err) {
       setGenerateMessage('⚠ Network error');
+      setTimeout(() => setGenerateMessage(null), 4000);
     } finally {
       setIsGenerating(false);
     }
