@@ -79,7 +79,7 @@ export function normalizeContactNumber(rawPhone: any, allowEmpty = false): strin
   if (cleaned.startsWith('03') && cleaned.length === 11) cleaned = '92' + cleaned.slice(1);
   else if (cleaned.length === 10 && cleaned.startsWith('3')) cleaned = '92' + cleaned;
   else if (!cleaned.startsWith('92') && cleaned.length >= 10) cleaned = '92' + cleaned.slice(-10);
-  
+
   if (!cleaned) return allowEmpty ? undefined : '';
   return cleaned;
 }
@@ -96,7 +96,7 @@ function parseFeeChangeSlot(
   const monthStr = rawMonth !== undefined && rawMonth !== null ? String(rawMonth).trim() : '';
   const feeFilled = feeStr !== '';
   const monthFilled = monthStr !== '';
-  
+
   if (!feeFilled && !monthFilled) return null;
   if (feeFilled !== monthFilled) {
     errors.push(`Fee Change Slot ${slotNumber}: both fee and effective month must be provided together.`);
@@ -216,7 +216,7 @@ export async function parseExcelOrCsvFile(
     const rawSerial = sNoCol !== -1 ? String(row[sNoCol] || '').trim() : '';
     const serialNo = formatSerialNo(rawSerial, startingSerialIndex + validRows.length);
     const className = normalizeClassName(classCol !== -1 ? row[classCol] : '');
-    
+
     const rollNo = rollCol !== -1 ? String(row[rollCol] || '').trim() : '';
     if (!rollNo) errors.push('Roll No is required.');
 
@@ -332,7 +332,7 @@ export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYe
   const invoices = ACADEMIC_MONTHS.map(month => {
     const status = row.monthlyStatuses[month] || 'unpaid';
     const paidAmount = Number(row.monthlyAmounts[month]) || 0;
-    
+
     let expectedFee = Number(row.monthlyFee) || 0;
     for (const ch of row.feeChanges || []) {
       if (ACADEMIC_MONTHS.indexOf(ch.effectiveFromMonth) <= ACADEMIC_MONTHS.indexOf(month)) {
@@ -349,6 +349,12 @@ export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYe
       paidAmount: status === 'new_admission' ? 0 : paidAmount,
       status,
       isWaived: false,
+      monthlyAmountsPaid: row.monthlyAmounts, // <-- ADD THIS
+      monthlyAmounts: row.monthlyAmounts, // <-- ADD THIS
+      monthlyStatuses: row.monthlyStatuses,
+      feeChanges: row.feeChanges,
+      discount: row.discount || 0,
+
     };
   });
 

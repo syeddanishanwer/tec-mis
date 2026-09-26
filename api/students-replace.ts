@@ -1,13 +1,13 @@
 import { sql } from '@vercel/postgres';
 import { verifyAuth } from './fees/_auth.js';
 
-const ACADEMIC_MONTHS = ['Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'] as const;
+const ACADEMIC_MONTHS = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'] as const;
 type AcademicMonth = typeof ACADEMIC_MONTHS[number];
 
 export default async function handler(req: any, res: any) {
   const isAuthenticated = await verifyAuth(req);
   if (!isAuthenticated) return res.status(401).json({ error: 'Unauthorized: Access Denied' });
-  if (req.method!== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { students, academicYear } = req.body as { students: any[]; academicYear: string };
 
@@ -51,10 +51,10 @@ export default async function handler(req: any, res: any) {
           class_name, contact_no, contact_no_2, academic_year, admission_date, data
         )
         VALUES (
-          ${student.serialNo?? null}, ${student.rollNo},
+          ${student.serialNo ?? null}, ${student.rollNo},
           ${student.studentName}, ${student.fatherName}, ${student.className},
-          ${student.contactNo?? null}, ${student.contactNo2?? null}, ${academicYear},
-          ${student.admissionDate?? new Date().toISOString().split('T')[0]},
+          ${student.contactNo ?? null}, ${student.contactNo2 ?? null}, ${academicYear},
+          ${student.admissionDate ?? new Date().toISOString().split('T')[0]},
           ${JSON.stringify(minimalData)}::jsonb
         )
         RETURNING id;
@@ -62,7 +62,7 @@ export default async function handler(req: any, res: any) {
       const studentId = studentResult.rows[0].id;
 
       const feeChanges: Array<{ newFee: number; effectiveFromMonth: AcademicMonth }> = student.feeChanges || [];
-      const baseFee = Number(student.monthlyFee?? 0);
+      const baseFee = Number(student.monthlyFee ?? 0);
 
       if (baseFee > 0) {
         await sql`
@@ -105,7 +105,12 @@ export default async function handler(req: any, res: any) {
             VALUES (${studentId}, ${academicYear}, ${month}, ${expectedFee}, 0, 0, 0, 'new_admission');
           `;
         } else {
-          const paidAmt = Number(student.monthlyAmountsPaid?.[month]?? 0);
+          const paidAmt = Number(
+            student.monthlyAmountsPaid?.[month] ??
+            student.monthlyAmounts?.[month] ??
+            student.invoices?.find((i: any) => i.month === month)?.paidAmount ??
+            0
+          );
           const netDue = Math.max(0, expectedFee - concession);
           let status: string = 'unpaid';
           if (paidAmt >= netDue && netDue > 0) status = 'paid';

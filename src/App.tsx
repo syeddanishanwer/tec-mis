@@ -82,20 +82,23 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
     let isMounted = true;
-    async function loadAcademicYears() {
+    async function loadStudents() {
+      setIsSyncing(true);
       try {
-        const res = await fetch('/api/academic-years/rollover', { credentials: 'include' });
+        const res = await fetch(`/api/students?academicYear=${selectedAcademicYear}`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
-          if (isMounted && Array.isArray(data.years) && data.years.length > 0) {
-            setAcademicYears(data.years);
-          }
+          if (isMounted) setStudents(data);
         }
-      } catch (err) { console.warn('Academic years fetch failed', err); }
+      } catch (err) {
+        console.warn('Students fetch failed', err);
+      } finally {
+        if (isMounted) setIsSyncing(false);
+      }
     }
-    loadAcademicYears();
+    loadStudents();
     return () => { isMounted = false; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, selectedAcademicYear]);
 
   const handleToggleMonthStatus = async (studentId: number, month: AcademicMonth) => {
     const student = students.find(s => s.id === studentId);
