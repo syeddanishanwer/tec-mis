@@ -288,7 +288,7 @@ export const FeeLedger: React.FC<Props> = ({
         <div className="bg-white p-3.5 rounded-xl border"><span className="text- font-semibold text-neutral-500 uppercase block">Billed (Jun-{activeReminderMonth})</span><div className="text-lg font-bold mt-1">Rs. {ledgerTotals.billed.toLocaleString()}</div></div>
         <div className="bg-white p-3.5 rounded-xl border border-emerald-200"><span className="text- font-semibold text-emerald-800 uppercase block">Collected</span><div className="text-lg font-bold text-emerald-700 mt-1">Rs. {ledgerTotals.collected.toLocaleString()}</div><span className="text- text-emerald-600">{ledgerTotals.rate}% recovery</span></div>
         <div className="bg-white p-3.5 rounded-xl border border-red-200"><span className="text- font-semibold text-red-800 uppercase block">Due / Overdue</span><div className="text-lg font-bold text-red-600 mt-1">Rs. {ledgerTotals.due.toLocaleString()}</div><span className="text- text-red-500">{ledgerTotals.overdueCount} students</span></div>
-        <div className="bg-white p-3.5 rounded-xl border border-blue-200"><span className="text- font-semibold text-blue-800 uppercase block">Active Evaluation</span><div className="text-lg font-bold mt-1">Through {activeReminderMonth}</div><span className="text- text-blue-600">{visibleMonths.length} months • Excludes NEW ADMISSION</span></div>
+        <div className="bg-white p-3.5 rounded-xl border border-blue-200"><span className="text- font-semibold text-blue-800 uppercase block">Active Evaluation</span><div className="text-lg font-bold mt-1">Through {activeReminderMonth}</div><span className="text- text-blue-600">{visibleMonths.length} months</span></div>
       </div>
 
       <div className="bg-white rounded-xl border overflow-hidden">

@@ -97,7 +97,7 @@ export const MonthlySummary: React.FC<Props> = ({
       <div className="bg-white p-5 rounded-xl border border-neutral-200/80 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h3 className="font-bold text-lg text-neutral-900 leading-tight">Monthly Fee Summary & Analytics Dashboard</h3>
-          <p className="text-xs text-neutral-500 mt-0.5">Evaluation of fee collections (Session {activeAcademicYear}) - Excludes NEW ADMISSION - Old + Revised fees reflected</p>
+          <p className="text-xs text-neutral-500 mt-0.5">Evaluation of fee collections (Session {activeAcademicYear})</p>
         </div>
         <div className="flex items-center gap-2 bg-neutral-100 p-1.5 rounded-lg border border-neutral-200">
           <Calendar className="w-4 h-4 text-neutral-500 ml-1" />
@@ -111,7 +111,7 @@ export const MonthlySummary: React.FC<Props> = ({
       <div className="bg-gradient-to-r from-neutral-900 via-neutral-800 to-slate-900 rounded-xl p-5 text-white shadow-sm border border-neutral-700">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-700/80">
           <div className="flex items-center gap-2"><Layers className="w-4 h-4 text-blue-400" /><span className="font-bold text-sm tracking-wide">Cumulative Session Totals (June through {activeMonth})</span></div>
-          <span className="text-xs text-neutral-300 bg-neutral-800/80 px-2.5 py-1 rounded-md border border-neutral-700">Synchronized • {activeMonthIndex + 1} Months • Excludes NEW ADMISSION</span>
+          <span className="text-xs text-neutral-300 bg-neutral-800/80 px-2.5 py-1 rounded-md border border-neutral-700">Synchronized • {activeMonthIndex + 1} Months</span>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-3.5">
           <div><span className="text- font-medium text-neutral-400 block uppercase tracking-wider">Total Billed To Date</span><div className="text-lg font-bold text-white mt-1">Rs. {sessionBilled.toLocaleString()}</div></div>

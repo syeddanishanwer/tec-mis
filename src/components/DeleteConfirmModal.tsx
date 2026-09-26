@@ -74,7 +74,6 @@ export const DeleteConfirmModal: React.FC<Props> = ({
             ) : (
               <div className="flex justify-between pt-1 border-t border-neutral-200 text-emerald-600 font-bold"><span>Outstanding Dues:</span><span>CLEARED</span></div>
             )}
-            <div className="text- text-neutral-400 pt-1">Excludes NEW ADMISSION months</div>
           </div>
 
           <div className="p-3 bg-red-50/80 rounded-lg border border-red-100 flex items-start gap-2 text- text-red-700">

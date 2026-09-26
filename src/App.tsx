@@ -325,7 +325,7 @@ export default function App() {
                     {isSyncing? <><RefreshCw className="w-3 h-3 animate-spin" />Syncing...</> : 'Live Fee System'}
                   </span>
                 </h1>
-                <p className="text-xs text-neutral-400"><span className="text-indigo-300 font-medium">Enter to learn. Go forth to serve.</span> • Fee Management • Excludes NEW ADMISSION</p>
+                <p className="text-xs text-neutral-400"><span className="text-indigo-300 font-medium">Enter to learn. Go forth to serve.</span> • Fee Management</p>
               </div>
             </div>
             <div className="flex items-center gap-2.5">

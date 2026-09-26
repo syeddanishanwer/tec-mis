@@ -96,7 +96,7 @@ export const AgingReport: React.FC<Props> = ({
       <div className="bg-white p-5 rounded-xl border border-neutral-200/80 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h3 className="font-bold text-lg text-neutral-900 leading-tight">Fee Receivable Aging & Overdue Recovery Report</h3>
-          <p className="text-xs text-neutral-500 mt-0.5">Prioritize recovery with aging buckets (Session: {activeAcademicYear} • Jun-{activeMonth}) - Excludes NEW ADMISSION months</p>
+          <p className="text-xs text-neutral-500 mt-0.5">Prioritize recovery with aging buckets (Session: {activeAcademicYear} • Jun-{activeMonth})</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {onActiveMonthChange? (
