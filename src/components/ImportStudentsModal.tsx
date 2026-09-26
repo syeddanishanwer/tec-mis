@@ -33,7 +33,7 @@ export const ImportStudentsModal: React.FC<Props> = ({
   onClose,
   onImportSuccess,
 }) => {
-  const yearsList = availableAcademicYears && availableAcademicYears.length > 0? availableAcademicYears : [activeAcademicYear || '2026-2027'];
+  const yearsList = availableAcademicYears && availableAcademicYears.length > 0 ? availableAcademicYears : [activeAcademicYear || '2026-2027'];
 
   const [file, setFile] = useState<File | null>(null);
   const [targetYear, setTargetYear] = useState<string>(activeAcademicYear || '2026-2027');
@@ -79,7 +79,7 @@ export const ImportStudentsModal: React.FC<Props> = ({
   const handleCommitImport = () => {
     if (parsedValidRows.length === 0) return;
 
-    let nextId = Math.max(0,...existingStudents.map(s => s.id)) + 1;
+    let nextId = Math.max(0, ...existingStudents.map(s => s.id)) + 1;
     let updatedCount = 0;
     let addedCount = 0;
 
@@ -94,7 +94,7 @@ export const ImportStudentsModal: React.FC<Props> = ({
 
       if (existingMatch) updatedCount++; else addedCount++;
 
-      const recordId = strategy === 'update_or_add' && existingMatch? existingMatch.id : nextId++;
+      const recordId = strategy === 'update_or_add' && existingMatch ? existingMatch.id : nextId++;
 
       // FIXED: Use new converter that creates invoices + feeSchedules
       const converted = convertParsedRowToStudentRecord(row, targetYear);
@@ -110,7 +110,9 @@ export const ImportStudentsModal: React.FC<Props> = ({
         contactNo2: row.contactNo2,
         monthlyFee: row.monthlyFee,
         academicYear: targetYear,
-        admissionDate: existingMatch? existingMatch.admissionDate : new Date().toISOString().split('T')[0],
+        admissionDate: existingMatch ? existingMatch.admissionDate : new Date().toISOString().split('T')[0],
+        admissionMonth: row.admissionMonth,           // ← ADD THIS
+        monthlyAmountsPaid: row.monthlyAmounts,       // ← ADD THIS
         // NEW STRUCTURE: invoices + feeSchedules
         invoices: converted.invoices,
         feeSchedules: converted.feeSchedules,
@@ -147,12 +149,12 @@ export const ImportStudentsModal: React.FC<Props> = ({
         <div className="p-5 overflow-y-auto flex-1 space-y-4">
           <div
             onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${isDragging? 'border-emerald-500 bg-emerald-50/40 scale-[0.99]' : file? 'border-neutral-300 bg-neutral-50/60' : 'border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50/50'}`}
+            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${isDragging ? 'border-emerald-500 bg-emerald-50/40 scale-[0.99]' : file ? 'border-neutral-300 bg-neutral-50/60' : 'border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50/50'}`}
           >
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx,.xls,.csv" className="hidden" />
             <div className="flex flex-col items-center justify-center gap-2">
-              <div className={`p-3 rounded-full ${file? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'}`}><Upload className="w-6 h-6" /></div>
-              {file? (
+              <div className={`p-3 rounded-full ${file ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-600'}`}><Upload className="w-6 h-6" /></div>
+              {file ? (
                 <div><p className="text-sm font-bold text-neutral-800">{file.name}</p><p className="text-xs text-neutral-500">{(file.size / 1024).toFixed(1)} KB • Click or drop another file to replace</p></div>
               ) : (
                 <div><p className="text-sm font-semibold text-neutral-800">Drag and drop Excel file here, or <span className="text-neutral-900 underline font-bold">browse</span></p><p className="text-xs text-neutral-500 mt-1">Columns: S#, Class, Roll No, Name, Father, Contact 1 & 2, Monthly Fee, New Fee 1-3 & Effective Months, Jun..May (supports NEW ADMISSION text)</p></div>
@@ -192,7 +194,7 @@ export const ImportStudentsModal: React.FC<Props> = ({
                         <td className="py-2 px-2 font-semibold text-neutral-900 whitespace-nowrap">{row.studentName}</td>
                         <td className="py-2 px-2 text-neutral-700 whitespace-nowrap">{row.fatherName}</td>
                         <td className="py-2 px-2 font-mono text- text-neutral-600 whitespace-nowrap">{formatPhoneDisplay(row.contactNo)}</td>
-                        <td className="py-2 px-2 font-mono text- text-neutral-500 whitespace-nowrap">{row.contactNo2? formatPhoneDisplay(row.contactNo2) : '—'}</td>
+                        <td className="py-2 px-2 font-mono text- text-neutral-500 whitespace-nowrap">{row.contactNo2 ? formatPhoneDisplay(row.contactNo2) : '—'}</td>
                         <td className="py-2 px-2 text-right font-semibold text-neutral-800 whitespace-nowrap">Rs. {row.monthlyFee.toLocaleString()}</td>
                         {ACADEMIC_MONTHS.map(m => {
                           const amt = row.monthlyAmounts[m] || 0;
@@ -203,7 +205,7 @@ export const ImportStudentsModal: React.FC<Props> = ({
                           let badgeColor = 'bg-red-50 text-red-700 border-red-200';
                           if (status === 'paid') badgeColor = 'bg-emerald-50 text-emerald-800 border-emerald-300';
                           else if (status === 'partial') badgeColor = 'bg-amber-50 text-amber-800 border-amber-300';
-                          return <td key={m} className="py-1.5 px-1 text-center whitespace-nowrap"><div className={`px-1.5 py-0.5 rounded text- font-semibold border ${badgeColor}`} title={`${m}: Rs. ${amt.toLocaleString()} (${status.toUpperCase()})`}>{amt > 0? `${amt.toLocaleString()}` : '-'}</div></td>;
+                          return <td key={m} className="py-1.5 px-1 text-center whitespace-nowrap"><div className={`px-1.5 py-0.5 rounded text- font-semibold border ${badgeColor}`} title={`${m}: Rs. ${amt.toLocaleString()} (${status.toUpperCase()})`}>{amt > 0 ? `${amt.toLocaleString()}` : '-'}</div></td>;
                         })}
                       </tr>
                     ))}
@@ -216,8 +218,8 @@ export const ImportStudentsModal: React.FC<Props> = ({
 
         <div className="bg-neutral-50 px-6 py-3.5 border-t border-neutral-200 flex items-center justify-between shrink-0">
           <button type="button" onClick={onClose} className="text-xs font-semibold px-4 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100">Cancel</button>
-          <button type="button" onClick={handleCommitImport} disabled={parsedValidRows.length === 0 || isParsing} className={`inline-flex items-center gap-2 text-xs font-bold px-5 py-2 rounded-lg shadow-xs ${parsedValidRows.length > 0 &&!isParsing? 'bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer' : 'bg-neutral-300 text-neutral-500 cursor-not-allowed'}`}>
-            {isParsing? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Parsing File...</> : <><Layers className="w-3.5 h-3.5" />Import {parsedValidRows.length} Students & Fees<ArrowRight className="w-3.5 h-3.5" /></>}
+          <button type="button" onClick={handleCommitImport} disabled={parsedValidRows.length === 0 || isParsing} className={`inline-flex items-center gap-2 text-xs font-bold px-5 py-2 rounded-lg shadow-xs ${parsedValidRows.length > 0 && !isParsing ? 'bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer' : 'bg-neutral-300 text-neutral-500 cursor-not-allowed'}`}>
+            {isParsing ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Parsing File...</> : <><Layers className="w-3.5 h-3.5" />Import {parsedValidRows.length} Students & Fees<ArrowRight className="w-3.5 h-3.5" /></>}
           </button>
         </div>
       </div>
