@@ -1,13 +1,13 @@
 import { sql } from '@vercel/postgres';
 import { verifyAuth } from './_auth.js';
 
-const ACADEMIC_MONTHS = ['Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'] as const;
+const ACADEMIC_MONTHS = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'] as const;
 type AcademicMonth = typeof ACADEMIC_MONTHS[number];
 
 export default async function handler(req: any, res: any) {
   const isAuthenticated = await verifyAuth(req);
   if (!isAuthenticated) return res.status(401).json({ error: 'Unauthorized: Access Denied' });
-  if (req.method!== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
     const { studentId, rollNo, monthlyFee, effectiveFromMonth, academicYear } = req.body as {
@@ -19,7 +19,7 @@ export default async function handler(req: any, res: any) {
       concession?: number; // ignored - concession is per invoice, not per schedule
     };
 
-    if ((!studentId &&!rollNo) || monthlyFee === undefined ||!effectiveFromMonth ||!academicYear) {
+    if ((!studentId && !rollNo) || monthlyFee === undefined || !effectiveFromMonth || !academicYear) {
       return res.status(400).json({ error: 'Missing studentId/rollNo, monthlyFee, effectiveFromMonth, or academicYear' });
     }
     if (!ACADEMIC_MONTHS.includes(effectiveFromMonth as any)) {
@@ -57,19 +57,23 @@ export default async function handler(req: any, res: any) {
 
     for (const month of monthsToUpdate) {
       await sql`
-        UPDATE invoices
-        SET
-          base_fee = ${Number(monthlyFee)},
-          net_due = GREATEST(0, ${Number(monthlyFee)} - concession_amount),
-          status = CASE
-            WHEN status = 'new_admission' THEN 'new_admission'
-            WHEN paid_amount >= GREATEST(0, ${Number(monthlyFee)} - concession_amount) AND GREATEST(0, ${Number(monthlyFee)} - concession_amount) > 0 THEN 'paid'
-            WHEN paid_amount > 0 THEN 'partial'
-            ELSE 'unpaid'
-          END,
-          updated_at = now()
-        WHERE student_id = ${dbStudentId} AND academic_year = ${academicYear} AND month = ${month};
-      `;
+    UPDATE invoices
+    SET
+      base_fee = ${Number(monthlyFee)},
+      net_due = CASE
+        WHEN is_waived THEN 0
+        ELSE GREATEST(0, ${Number(monthlyFee)} - concession_amount)
+      END,
+      status = CASE
+        WHEN status = 'new_admission' THEN 'new_admission'
+        WHEN is_waived THEN status
+        WHEN paid_amount >= GREATEST(0, ${Number(monthlyFee)} - concession_amount) AND GREATEST(0, ${Number(monthlyFee)} - concession_amount) > 0 THEN 'paid'
+        WHEN paid_amount > 0 THEN 'partial'
+        ELSE 'unpaid'
+      END,
+      updated_at = now()
+    WHERE student_id = ${dbStudentId} AND academic_year = ${academicYear} AND month = ${month};
+  `;
     }
 
     // 3. Ensure invoices exist for months that may be missing (if student was created before invoices logic)

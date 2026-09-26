@@ -30,6 +30,7 @@ interface Props {
   onToggleMonthStatus: (studentId: number, month: AcademicMonth) => void;
   onUpdateMonthAmount?: (studentId: number, month: AcademicMonth, amount: number) => void;
   onToggleWaived: (studentId: number, month: AcademicMonth) => void;
+  onUpdateFee: (studentId: number, month: AcademicMonth, newBaseFee: number) => void;
 }
 
 export const FeeLedger: React.FC<Props> = ({
@@ -46,6 +47,7 @@ export const FeeLedger: React.FC<Props> = ({
   onToggleMonthStatus,
   onUpdateMonthAmount,
   onToggleWaived,
+  onUpdateFee,   // ← ADD THIS LINE
 }) => {
   const [selectedClass, setSelectedClass] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
@@ -58,10 +60,24 @@ export const FeeLedger: React.FC<Props> = ({
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ studentId: number; month: AcademicMonth } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
-
+  const [editingFeeCell, setEditingFeeCell] = useState<{ studentId: number; month: AcademicMonth } | null>(null);
+  const [feeEditValue, setFeeEditValue] = useState<string>('');
   const activeReminderMonth = activeMonth || internalActiveMonth;
   const activeMonthIndex = ACADEMIC_MONTHS.indexOf(activeReminderMonth);
   const visibleMonths = ACADEMIC_MONTHS.slice(0, activeMonthIndex + 1);
+
+  const handleStartEditFee = (studentId: number, month: AcademicMonth, currentBaseFee: number) => {
+    setEditingCell(null);
+    setEditingFeeCell({ studentId, month });
+    setFeeEditValue(String(currentBaseFee));
+  };
+
+  const handleCommitFee = async (studentId: number, month: AcademicMonth) => {
+    const parsed = parseInt(feeEditValue, 10);
+    const finalFee = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+    await onUpdateFee(studentId, month, finalFee);
+    setEditingFeeCell(null);
+  };
 
   const handleGenerateInvoices = async () => {
     setIsGenerating(true);
@@ -266,8 +282,10 @@ export const FeeLedger: React.FC<Props> = ({
     if (status === 'paid') { bg = 'bg-emerald-50 text-emerald-700 border-emerald-200'; label = 'Paid'; }
     else if (status === 'partial') { bg = 'bg-amber-50 text-amber-700 border-amber-200'; label = 'Partial'; }
 
-    const isEditing = editingCell?.studentId === studentId && editingCell?.month === month;
-    if (isEditing) {
+    const isEditingAmount = editingCell?.studentId === studentId && editingCell?.month === month;
+    const isEditingFee = editingFeeCell?.studentId === studentId && editingFeeCell?.month === month;
+
+    if (isEditingAmount) {
       return (
         <div className="inline-block" onClick={e => e.stopPropagation()}>
           <input
@@ -283,26 +301,53 @@ export const FeeLedger: React.FC<Props> = ({
       );
     }
 
+    if (isEditingFee) {
+      return (
+        <div className="inline-block" onClick={e => e.stopPropagation()}>
+          <input
+            type="number"
+            autoFocus
+            value={feeEditValue}
+            onChange={e => setFeeEditValue(e.target.value)}
+            onBlur={() => handleCommitFee(studentId, month)}
+            onKeyDown={e => { if (e.key === 'Enter') handleCommitFee(studentId, month); if (e.key === 'Escape') setEditingFeeCell(null); }}
+            placeholder="New fee"
+            className="w-16 px-1 py-0.5 text-xs font-mono font-bold text-center border-2 border-purple-600 rounded bg-white"
+          />
+        </div>
+      );
+    }
+
     return (
-      <button
-        type="button"
-        onClick={() => onToggleMonthStatus(studentId, month)}
-        onDoubleClick={() => handleStartEditAmount(studentId, month, paidAmount)}
-        onContextMenu={handleRightClick}
-        title={`${month} • Due: Rs. ${netDue} • Paid: Rs. ${paidAmount} • Double-click to edit amount • Right-click to waive`}
-        className={`px-1.5 py-1 text-xs font-semibold rounded-md border cursor-pointer min-w- ${bg}`}
-      >
-        {cellDisplayMode === 'status' ? (
-          <span>{label}</span>
-        ) : (
-          <div className="leading-tight">
+      <div className="relative group inline-block">
+        <button
+          type="button"
+          onClick={() => onToggleMonthStatus(studentId, month)}
+          onDoubleClick={() => handleStartEditAmount(studentId, month, paidAmount)}
+          onContextMenu={handleRightClick}
+          title={`${month} • Due: Rs. ${netDue} • Paid: Rs. ${paidAmount} • Double-click to edit paid amount • Right-click to waive • Pencil icon to correct fee`}
+          className={`px-1.5 py-1 text-xs font-semibold rounded-md border cursor-pointer min-w- ${bg}`}
+        >
+          {cellDisplayMode === 'status' ? (
             <span>{label}</span>
-            <span className="block text-[9.5px] font-mono opacity-85">
-              {paidAmount > 0 ? `${paidAmount.toLocaleString()}` : `0 / ${netDue.toLocaleString()}`}
-            </span>
-          </div>
-        )}
-      </button>
+          ) : (
+            <div className="leading-tight">
+              <span>{label}</span>
+              <span className="block text-[9.5px] font-mono opacity-85">
+                {paidAmount > 0 ? `${paidAmount.toLocaleString()}` : `0 / ${netDue.toLocaleString()}`}
+              </span>
+            </div>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); handleStartEditFee(studentId, month, Number(inv.baseFee)); }}
+          title={`Correct the fee charged for ${month}`}
+          className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-purple-600 text-white opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+        >
+          <Pencil className="w-2.5 h-2.5" />
+        </button>
+      </div>
     );
   };
 
@@ -414,7 +459,7 @@ export const FeeLedger: React.FC<Props> = ({
                         const globalIdx = filteredStudents.indexOf(student);
                         const displaySNo = formatSerialNo(student.serialNo, globalIdx + 1);
                         let studentCollected = 0, studentDue = 0, studentOverdueCount = 0;
-                        
+
                         visibleMonths.forEach(m => {
                           const inv = getInv(student.id, m as AcademicMonth);
                           if (!inv || (inv.status as string) === 'new_admission') return;

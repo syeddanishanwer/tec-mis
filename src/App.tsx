@@ -82,20 +82,20 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
     let isMounted = true;
-    async function loadDatabaseStudents() {
-      setIsSyncing(true);
+    async function loadAcademicYears() {
       try {
-        const response = await fetch(`/api/students?academicYear=${selectedAcademicYear}`, { credentials: 'include' });
-        if (response.ok) {
-          const data = await response.json();
-          if (isMounted && Array.isArray(data)) setStudents(data);
+        const res = await fetch('/api/academic-years/rollover', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && Array.isArray(data.years) && data.years.length > 0) {
+            setAcademicYears(data.years);
+          }
         }
-      } catch (err) { console.warn('DB fetch failed', err); }
-      finally { if (isMounted) setIsSyncing(false); }
+      } catch (err) { console.warn('Academic years fetch failed', err); }
     }
-    loadDatabaseStudents();
+    loadAcademicYears();
     return () => { isMounted = false; };
-  }, [selectedAcademicYear, isAuthenticated]);
+  }, [isAuthenticated]);
 
   const handleToggleMonthStatus = async (studentId: number, month: AcademicMonth) => {
     const student = students.find(s => s.id === studentId);
@@ -126,6 +126,37 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) { setStudents(originalStudents); showToast(`⚠ ${data.error}`); }
       else showToast(`Updated ${month} to ${newStatus}`);
+    } catch { setStudents(originalStudents); showToast('⚠ Network error'); }
+  };
+
+  const handleUpdateFee = async (studentId: number, month: AcademicMonth, newBaseFee: number) => {
+    const student = students.find(s => s.id === studentId);
+    const currentInvoice = student?.invoices?.find(inv => inv.month === month && inv.academicYear === selectedAcademicYear);
+    if (!currentInvoice) { showToast(`No invoice for ${month}`); return; }
+    if (currentInvoice.status === 'new_admission') { showToast(`Cannot edit ${month}: NEW ADMISSION`); return; }
+    if (currentInvoice.isWaived) { showToast(`Cannot edit ${month}: WAIVED. Remove waiver first.`); return; }
+
+    const validFee = Math.max(0, isNaN(newBaseFee) ? 0 : newBaseFee);
+    const concession = Number(currentInvoice.concessionAmount || 0);
+    const netDue = Math.max(0, validFee - concession);
+    const paidAmount = Number(currentInvoice.paidAmount);
+    let derivedStatus: PaymentStatus = 'unpaid';
+    if (paidAmount >= netDue && netDue > 0) derivedStatus = 'paid';
+    else if (paidAmount > 0) derivedStatus = 'partial';
+
+    const originalStudents = students;
+    setStudents(prev => prev.map(s => {
+      if (s.id !== studentId) return s;
+      return { ...s, invoices: s.invoices.map(inv => inv.month === month && inv.academicYear === selectedAcademicYear ? { ...inv, baseFee: validFee, netDue, status: derivedStatus } : inv) };
+    }));
+
+    try {
+      const res = await fetch('/api/fees/invoice-actions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ action: 'updateFee', studentId, month, academicYear: selectedAcademicYear, baseFee: validFee, concessionAmount: concession }),
+      });
+      if (!res.ok) { const err = await res.json(); setStudents(originalStudents); showToast(`⚠ ${err.error}`); }
+      else showToast(`Updated ${month} fee to Rs. ${validFee.toLocaleString()}`);
     } catch { setStudents(originalStudents); showToast('⚠ Network error'); }
   };
 
@@ -340,7 +371,24 @@ export default function App() {
         setIsSyncing(false);
       }
     } else {
-      showToast(`Year ${newYear} added (empty, no rollover)!`);
+      // CHANGED: previously this branch only showed a toast — the year was
+      // never actually persisted to the database, so it vanished on refresh.
+      try {
+        const res = await fetch('/api/academic-years/rollover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ toYear: newYear }),
+        });
+        if (res.ok) {
+          showToast(`Year ${newYear} added (empty, no rollover)!`);
+        } else {
+          const err = await res.json().catch(() => ({}));
+          showToast(`⚠ Failed to save year ${newYear}: ${err.error || 'error'}`);
+        }
+      } catch {
+        showToast(`⚠ Network error adding year ${newYear}`);
+      }
     }
 
     if (setAsActive) setSelectedAcademicYear(newYear);
@@ -422,6 +470,7 @@ export default function App() {
             onToggleMonthStatus={handleToggleMonthStatus}
             onUpdateMonthAmount={handleUpdateMonthAmount}
             onToggleWaived={handleToggleWaived}
+            onUpdateFee={handleUpdateFee}   /* ← must also be here */
           />
         )}
         {activeTab === 'aging' && <AgingReport students={students} activeAcademicYear={selectedAcademicYear} activeMonth={sharedActiveMonth} onActiveMonthChange={setSharedActiveMonth} onOpenWhatsApp={(student, month, customOutstanding) => setWhatsAppTarget({ student, month, customOutstanding })} />}

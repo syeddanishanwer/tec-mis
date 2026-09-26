@@ -10,21 +10,43 @@ export default async function handler(req: any, res: any) {
     return res.status(401).json({ error: 'Unauthorized: Access Denied' });
   }
 
-  if (req.method!== 'POST') {
+  // GET - list all known academic years, persisted in the academic_years table
+  if (req.method === 'GET') {
+    try {
+      const { rows } = await sql`SELECT year FROM academic_years ORDER BY year DESC;`;
+      return res.status(200).json({ years: rows.map((r: any) => r.year) });
+    } catch (err: any) {
+      console.error('Fetch Academic Years Error:', err);
+      return res.status(500).json({ error: err.message || 'Failed to fetch academic years' });
+    }
+  }
+
+  if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { fromYear, toYear } = req.body as { fromYear: string; toYear: string };
+  const { fromYear, toYear } = req.body as { fromYear?: string; toYear: string };
 
-  if (!fromYear ||!toYear) {
-    return res.status(400).json({ error: 'fromYear and toYear required' });
+  if (!toYear) {
+    return res.status(400).json({ error: 'toYear required' });
   }
-
-  if (fromYear === toYear) {
+  if (fromYear && fromYear === toYear) {
     return res.status(400).json({ error: 'fromYear and toYear cannot be same' });
   }
 
   try {
+    // Always register the year — this is what makes it show up in the dropdown
+    // in every future session, not just the one where it was created.
+    await sql`INSERT INTO academic_years (year) VALUES (${toYear}) ON CONFLICT (year) DO NOTHING;`;
+
+    // No fromYear: this is just "add an empty year", no rollover requested.
+    if (!fromYear) {
+      return res.status(200).json({ success: true, toYear, rolledOver: false });
+    }
+
+    // Defensive: make sure fromYear is registered too (should already be, but cheap to guarantee).
+    await sql`INSERT INTO academic_years (year) VALUES (${fromYear}) ON CONFLICT (year) DO NOTHING;`;
+
     // 1. Get all students from fromYear
     const { rows: students } = await sql`
       SELECT id, roll_no FROM students WHERE academic_year = ${fromYear};
@@ -52,7 +74,7 @@ export default async function handler(req: any, res: any) {
         LIMIT 1;
       `;
 
-      const currentFee = feeRows.length > 0? Number(feeRows[0].monthly_fee) : 3500;
+      const currentFee = feeRows.length > 0 ? Number(feeRows[0].monthly_fee) : 3500;
 
       // 3. Skip if already rolled over
       const { rows: existing } = await sql`
@@ -79,7 +101,16 @@ export default async function handler(req: any, res: any) {
           const { rows: newStudent } = await sql`
             INSERT INTO students (serial_no, roll_no, student_name, father_name, class_name, contact_no, contact_no_2, academic_year, admission_date, data)
             VALUES (${fs.serial_no}, ${fs.roll_no}, ${fs.student_name}, ${fs.father_name}, ${fs.class_name}, ${fs.contact_no}, ${fs.contact_no_2}, ${toYear}, ${newAdmDate}, ${fs.data}::jsonb)
-            ON CONFLICT (roll_no) DO UPDATE SET academic_year = EXCLUDED.academic_year RETURNING id;
+            ON CONFLICT (roll_no, academic_year) DO UPDATE SET
+              serial_no = EXCLUDED.serial_no,
+              student_name = EXCLUDED.student_name,
+              father_name = EXCLUDED.father_name,
+              class_name = EXCLUDED.class_name,
+              contact_no = EXCLUDED.contact_no,
+              contact_no_2 = EXCLUDED.contact_no_2,
+              data = EXCLUDED.data,
+              updated_at = now()
+            RETURNING id;
           `;
           if (newStudent.length > 0) targetStudentId = newStudent[0].id;
         }
@@ -110,6 +141,7 @@ export default async function handler(req: any, res: any) {
       success: true,
       fromYear,
       toYear,
+      rolledOver: true,
       count: students.length,
       skipped,
       createdInvoices,
