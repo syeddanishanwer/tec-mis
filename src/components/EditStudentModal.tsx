@@ -99,15 +99,9 @@ export const EditStudentModal: React.FC<Props> = ({
     setAdmissionError(null);
     setAdmissionSuccess(null);
     try {
-      const res = await fetch('/api/fees/update-admission', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          studentId: student.id,
-          academicYear: student.academicYear || activeAcademicYear,
-          newAdmissionMonth,
-        }),
+      const res = await fetch('/api/fees/invoice-actions', {   // was '/api/fees/update-admission'
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ action: 'updateAdmission', studentId: student.id, academicYear: student.academicYear || activeAcademicYear, newAdmissionMonth }),
       });
       const data = await res.json();
       if (!res.ok) {
