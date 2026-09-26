@@ -41,26 +41,30 @@ export const MonthlySummary: React.FC<Props> = ({
     activeYearStudents.forEach(s => {
       s.invoices?.forEach(inv => {
         if (inv.academicYear === activeAcademicYear) {
-          map.set(`${s.id}_${inv.month}`, inv);
+          map.set(`${s.id}_${inv.academicYear}_${inv.month}`, inv);
         }
       });
     });
     return map;
   }, [activeYearStudents, activeAcademicYear]);
 
+  const getInv = (studentId: number, month: AcademicMonth): Invoice | undefined => {
+    return invoiceMap.get(`${studentId}_${activeAcademicYear}_${month}`);
+  };
+
   const { sessionBilled, sessionCollected, sessionDue } = useMemo(() => {
     let billed = 0, collected = 0, due = 0;
     activeYearStudents.forEach(s => {
       visibleMonths.forEach(m => {
-        const inv = invoiceMap.get(`${s.id}_${m}`);
-        if (!inv || inv.status === 'new_admission') return;
+        const inv = getInv(s.id, m as AcademicMonth);
+        if (!inv || (inv.status as string) === 'new_admission') return;
         billed += Number(inv.netDue) || 0;
         collected += Number(inv.paidAmount) || 0;
         due += Math.max(0, (Number(inv.netDue) || 0) - (Number(inv.paidAmount) || 0));
       });
     });
     return { sessionBilled: billed, sessionCollected: collected, sessionDue: due };
-  }, [activeYearStudents, visibleMonths, invoiceMap]);
+  }, [activeYearStudents, visibleMonths, invoiceMap, activeAcademicYear]);
 
   const sessionRecoveryRate = sessionBilled > 0? Math.round((sessionCollected / sessionBilled) * 100) : 0;
   const totalActiveStudents = activeYearStudents.length;
@@ -73,8 +77,8 @@ export const MonthlySummary: React.FC<Props> = ({
     let classExpected = 0;
     let classCollected = 0;
     classStudents.forEach(s => {
-      const inv = invoiceMap.get(`${s.id}_${activeMonth}`);
-      if (!inv || inv.status === 'new_admission') return;
+      const inv = getInv(s.id, activeMonth);
+      if (!inv || (inv.status as string) === 'new_admission') return;
       classExpected += Number(inv.netDue) || 0;
       classCollected += Number(inv.paidAmount) || 0;
     });
@@ -93,12 +97,12 @@ export const MonthlySummary: React.FC<Props> = ({
       <div className="bg-white p-5 rounded-xl border border-neutral-200/80 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h3 className="font-bold text-lg text-neutral-900 leading-tight">Monthly Fee Summary & Analytics Dashboard</h3>
-          <p className="text-xs text-neutral-500 mt-0.5">Evaluation of fee collections, target vs realization (Session {activeAcademicYear}) - Excludes NEW ADMISSION months</p>
+          <p className="text-xs text-neutral-500 mt-0.5">Evaluation of fee collections (Session {activeAcademicYear}) - Excludes NEW ADMISSION - Old + Revised fees reflected</p>
         </div>
         <div className="flex items-center gap-2 bg-neutral-100 p-1.5 rounded-lg border border-neutral-200">
           <Calendar className="w-4 h-4 text-neutral-500 ml-1" />
           <span className="text-xs font-semibold text-neutral-700">Active Month:</span>
-          <select value={activeMonth} onChange={e => handleMonthChange(e.target.value as AcademicMonth)} className="text-xs font-bold bg-white border border-neutral-300 rounded-md px-2.5 py-1 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <select value={activeMonth} onChange={e => handleMonthChange(e.target.value as AcademicMonth)} className="text-xs font-bold bg-white border border-neutral-300 rounded-md px-2.5 py-1">
             {ACADEMIC_MONTHS.map(m => <option key={m} value={m}>{m} ({activeAcademicYear})</option>)}
           </select>
         </div>
@@ -110,29 +114,29 @@ export const MonthlySummary: React.FC<Props> = ({
           <span className="text-xs text-neutral-300 bg-neutral-800/80 px-2.5 py-1 rounded-md border border-neutral-700">Synchronized • {activeMonthIndex + 1} Months • Excludes NEW ADMISSION</span>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-3.5">
-          <div><span className="text- font-medium text-neutral-400 block uppercase tracking-wider">Total Billed To Date</span><div className="text-lg font-bold text-white mt-1">Rs. {sessionBilled.toLocaleString()}</div><span className="text- text-neutral-400">June to {activeMonth} schedule</span></div>
+          <div><span className="text- font-medium text-neutral-400 block uppercase tracking-wider">Total Billed To Date</span><div className="text-lg font-bold text-white mt-1">Rs. {sessionBilled.toLocaleString()}</div></div>
           <div><span className="text- font-medium text-emerald-400 block uppercase tracking-wider">Total Collected</span><div className="text-lg font-bold text-emerald-400 mt-1">Rs. {sessionCollected.toLocaleString()}</div><span className="text- text-emerald-300/80">{sessionRecoveryRate}% recovery</span></div>
-          <div><span className="text- font-medium text-rose-400 block uppercase tracking-wider">Total Due / Outstanding</span><div className="text-lg font-bold text-rose-400 mt-1">Rs. {sessionDue.toLocaleString()}</div><span className="text- text-rose-300/80">Net unpaid dues</span></div>
-          <div><span className="text- font-medium text-blue-300 block uppercase tracking-wider">Session Health</span><div className="text-lg font-bold text-blue-200 mt-1">{sessionRecoveryRate}% Realized</div><span className="text- text-blue-300/80">{totalActiveStudents} students evaluated</span></div>
+          <div><span className="text- font-medium text-rose-400 block uppercase tracking-wider">Total Due</span><div className="text-lg font-bold text-rose-400 mt-1">Rs. {sessionDue.toLocaleString()}</div></div>
+          <div><span className="text- font-medium text-blue-300 block uppercase tracking-wider">Session Health</span><div className="text-lg font-bold text-blue-200 mt-1">{sessionRecoveryRate}% Realized</div><span className="text- text-blue-300/80">{totalActiveStudents} students</span></div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-neutral-200 p-4 shadow-xs">
           <div className="flex items-center justify-between text-neutral-500 mb-2"><span className="text-xs font-semibold uppercase tracking-wider">Active Students</span><Users className="w-4 h-4 text-blue-600" /></div>
-          <div className="text-2xl font-bold text-neutral-900">{totalActiveStudents}</div><div className="text- text-neutral-500 mt-1">Across 13 Classes</div>
+          <div className="text-2xl font-bold text-neutral-900">{totalActiveStudents}</div>
         </div>
         <div className="bg-white rounded-xl border border-neutral-200 p-4 shadow-xs">
           <div className="flex items-center justify-between text-neutral-500 mb-2"><span className="text-xs font-semibold uppercase tracking-wider">Expected ({activeMonth})</span><TrendingUp className="w-4 h-4 text-neutral-600" /></div>
-          <div className="text-2xl font-bold text-neutral-900">Rs. {totalExpectedMonth.toLocaleString()}</div><div className="text- text-neutral-500 mt-1">Excludes NEW ADMISSION</div>
+          <div className="text-2xl font-bold text-neutral-900">Rs. {totalExpectedMonth.toLocaleString()}</div>
         </div>
         <div className="bg-white rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 shadow-xs">
           <div className="flex items-center justify-between text-emerald-800 mb-2"><span className="text-xs font-semibold uppercase tracking-wider">Collected Revenue</span><CheckCircle2 className="w-4 h-4 text-emerald-600" /></div>
-          <div className="text-2xl font-bold text-emerald-700">Rs. {totalCollectedMonth.toLocaleString()}</div><div className="text- text-emerald-700 mt-1">Realized cash & bank</div>
+          <div className="text-2xl font-bold text-emerald-700">Rs. {totalCollectedMonth.toLocaleString()}</div>
         </div>
         <div className="bg-white rounded-xl border border-rose-200 bg-rose-50/30 p-4 shadow-xs">
           <div className="flex items-center justify-between text-rose-800 mb-2"><span className="text-xs font-semibold uppercase tracking-wider">Unpaid Dues</span><AlertCircle className="w-4 h-4 text-rose-600" /></div>
-          <div className="text-2xl font-bold text-rose-700">Rs. {totalPendingMonth.toLocaleString()}</div><div className="text- text-rose-700 mt-1">Uncollected for {activeMonth}</div>
+          <div className="text-2xl font-bold text-rose-700">Rs. {totalPendingMonth.toLocaleString()}</div>
         </div>
       </div>
 
@@ -148,7 +152,7 @@ export const MonthlySummary: React.FC<Props> = ({
         <div className="flex items-center justify-between mb-3"><h4 className="font-bold text-neutral-900 text-sm">Revenue Breakdown by Class ({activeMonth})</h4><span className="text-xs text-neutral-500">13 Divisions</span></div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5">
           {classBreakdowns.map(item => (
-            <div key={item.className} className="bg-white rounded-xl border border-neutral-200/90 p-4 shadow-xs hover:border-neutral-300">
+            <div key={item.className} className="bg-white rounded-xl border border-neutral-200/90 p-4 shadow-xs">
               <div className="flex items-center justify-between mb-2"><span className="font-bold text-sm text-neutral-900">{item.className}</span><span className="text- font-semibold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700 border">{item.totalStudents} Students</span></div>
               <div className="space-y-1.5 text-xs text-neutral-600 mt-3">
                 <div className="flex justify-between"><span className="text-neutral-500">Expected:</span><span className="font-medium text-neutral-800">Rs. {item.expectedRevenue.toLocaleString()}</span></div>
