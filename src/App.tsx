@@ -314,21 +314,21 @@ export default function App() {
 
       <header className="bg-neutral-900 text-white border-b border-neutral-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-lg bg-white p-0.5 flex items-center justify-center overflow-hidden border border-neutral-700">
-                <img src="/school_logo.jpg" alt="Logo" className="w-full h-full object-contain" onError={e => (e.currentTarget as HTMLElement).style.display = 'none'} />
-              </div>
-              <div>
-                <h1 className="font-bold text-base leading-tight flex items-center gap-2">
-                  The Educational Centre Secondary School
-                  <span className="text- uppercase font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                    {isSyncing ? <><RefreshCw className="w-3 h-3 animate-spin" />Syncing...</> : 'Live Fee System'}
-                  </span>
-                </h1>
-                <p className="text-xs text-neutral-400"><span className="text-indigo-300 font-medium">Enter to learn. Go forth to serve.</span> • Fee Management</p>
-              </div>
+          <div className="flex items-center justify-between h-16 relative">
+            <div className="w-11 h-11 rounded-lg bg-white p-0.5 flex items-center justify-center overflow-hidden border border-neutral-700">
+              <img src="/school_logo.jpg" alt="Logo" className="w-full h-full object-contain" onError={e => (e.currentTarget as HTMLElement).style.display = 'none'} />
             </div>
+
+            <div className="absolute left-1/2 -translate-x-1/2 text-center px-4">
+              <h1 className="font-bold text-base leading-tight flex items-center justify-center gap-2 whitespace-nowrap">
+                The Educational Centre Secondary School
+                <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center gap-1 mr-3">
+                  {isSyncing ? <><RefreshCw className="w-3 h-3 animate-spin" />Syncing...</> : 'Live Fee System'}
+                </span>
+              </h1>
+              <p className="text-xs text-neutral-400"><span className="text-indigo-300 font-medium">Enter to learn. Go forth to serve.</span></p>
+            </div>
+
             <div className="flex items-center gap-2.5">
               <div className="flex items-center bg-neutral-800/90 border border-neutral-700/80 rounded-lg p-1 text-xs">
                 <div className="flex items-center gap-1.5 px-2 py-0.5 text-neutral-300 font-medium">
@@ -337,14 +337,15 @@ export default function App() {
                     {academicYears.map(yr => <option key={yr} value={yr}>{yr}</option>)}
                   </select>
                 </div>
-                <button onClick={() => setShowAddAcademicYear(true)} className="inline-flex items-center gap-1 px-2.5 py-1 bg-neutral-700 hover:bg-neutral-600 text-white rounded text- font-semibold border border-neutral-600 ml-1"><CalendarPlus className="w-3.5 h-3.5 text-indigo-300" /><span className="hidden md:inline">Add Year</span></button>
               </div>
+              <button onClick={() => setShowAddAcademicYear(true)} className="inline-flex items-center gap-1 px-2.5 py-1 bg-neutral-700 hover:bg-neutral-600 text-white rounded text- font-semibold border border-neutral-600 ml-1"><CalendarPlus className="w-3.5 h-3.5 text-indigo-300" /><span className="hidden md:inline">Add Year</span></button>
               <button onClick={() => setIsPanMode(prev => !prev)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${isPanMode || isSpaceHeld ? 'bg-amber-400 text-neutral-950 font-bold ring-2 ring-amber-300' : 'bg-neutral-800 text-neutral-200 border border-neutral-700'}`}><Hand className="w-3.5 h-3.5" /><span className="hidden sm:inline">{isPanMode ? 'Pan: ON' : 'Pan View'}</span></button>
               <button onClick={() => setShowImportModal(true)} className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold"><Upload className="w-3.5 h-3.5" />Import Excel</button>
               <button onClick={() => setShowAddStudent(true)} className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"><Plus className="w-3.5 h-3.5" />Enroll Student</button>
               <button onClick={handleLogout} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-rose-600/20 text-neutral-300 hover:text-rose-400 border border-neutral-700 rounded-lg text-xs font-semibold ml-1"><LogOut className="w-3.5 h-3.5" />Logout</button>
             </div>
           </div>
+
           <div className="flex flex-wrap items-center justify-between border-t border-neutral-800/80 pt-1 pb-2 gap-2">
             <div className="flex space-x-1 sm:space-x-2 overflow-x-auto">
               <button onClick={() => setActiveTab('summary')} className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap ${activeTab === 'summary' ? 'bg-blue-600 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'}`}><BarChart3 className="w-3.5 h-3.5" />Monthly Summary</button>
