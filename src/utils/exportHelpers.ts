@@ -1,7 +1,6 @@
 import * as XLSX from 'xlsx';
 import { StudentRecord, ACADEMIC_MONTHS, AcademicMonth, Invoice, PaymentStatus } from '../types';
 
-// FIXED: Local helpers - no mockStudents import
 function formatPhoneDisplay(raw?: string): string {
   if (!raw) return '';
   let cleaned = String(raw).replace(/[^0-9]/g, '');
@@ -11,7 +10,7 @@ function formatPhoneDisplay(raw?: string): string {
 }
 
 function formatSerialNo(serialNo?: string | number, fallback?: number): string {
-  if (serialNo!== undefined && serialNo!== null) return String(serialNo).trim().padStart(3, '0');
+  if (serialNo !== undefined && serialNo !== null) return String(serialNo).trim().padStart(3, '0');
   if (fallback) return String(fallback).padStart(3, '0');
   return '001';
 }
@@ -19,7 +18,7 @@ function formatSerialNo(serialNo?: string | number, fallback?: number): string {
 function getCurrentAcademicMonthIndex(): number {
   const currentMonthName = new Date().toLocaleString('en-US', { month: 'short' }) as AcademicMonth;
   const idx = ACADEMIC_MONTHS.indexOf(currentMonthName);
-  return idx!== -1? idx : ACADEMIC_MONTHS.indexOf('Sep'); // Default Sep
+  return idx !== -1 ? idx : ACADEMIC_MONTHS.indexOf('Sep');
 }
 
 function formatContactForCSV(rawNumber: string | undefined): string {
@@ -28,7 +27,6 @@ function formatContactForCSV(rawNumber: string | undefined): string {
   return `"=""${formatted}"""`;
 }
 
-// FIXED: Calculate from invoices only, excluding new_admission
 function calculateInvoiceTotals(
   student: StudentRecord,
   invoicesMap?: Map<string, Invoice>,
@@ -39,7 +37,6 @@ function calculateInvoiceTotals(
   let totalBilled = 0;
   const targetMonths = ACADEMIC_MONTHS.slice(0, untilMonthIndex + 1);
 
-  // Build map from student.invoices if invoicesMap not provided
   const getInvoice = (month: AcademicMonth): Invoice | undefined => {
     if (invoicesMap) return invoicesMap.get(`${student?.id}_${month}`);
     return student.invoices?.find(inv => inv.month === month);
@@ -47,7 +44,7 @@ function calculateInvoiceTotals(
 
   targetMonths.forEach((m) => {
     const inv = getInvoice(m as AcademicMonth);
-    if (!inv || inv.status === 'new_admission') return; // Exclude NEW ADMISSION
+    if (!inv || inv.status === 'new_admission') return;
     totalBilled += Number(inv.netDue) || 0;
     totalCollected += Number(inv.paidAmount) || 0;
     totalOutstanding += Math.max(0, (Number(inv.netDue) || 0) - (Number(inv.paidAmount) || 0));
@@ -56,7 +53,6 @@ function calculateInvoiceTotals(
   return { totalCollected, totalOutstanding, totalBilled };
 }
 
-// FIXED: Export Excel with invoices + feeSchedules
 export function exportToExcel(
   students: StudentRecord[],
   filename?: string,
@@ -89,7 +85,7 @@ export function exportToExcel(
     const monthStatuses = ACADEMIC_MONTHS.map(m => {
       const inv = getInvoice(m as AcademicMonth);
       if (!inv) return 'NO INVOICE';
-      return inv.status === 'new_admission'? 'NEW ADMISSION' : inv.status.toUpperCase();
+      return inv.status === 'new_admission' ? 'NEW ADMISSION' : inv.status.toUpperCase();
     });
 
     const monthAmounts = ACADEMIC_MONTHS.map(m => {
@@ -98,21 +94,20 @@ export function exportToExcel(
       return Number(inv.paidAmount) || 0;
     });
 
-    const sNo = student?.serialNo? formatSerialNo(student.serialNo) : formatSerialNo(student?.id || idx + 1, idx + 1);
+    const sNo = student?.serialNo ? formatSerialNo(student.serialNo) : formatSerialNo(student?.id || idx + 1, idx + 1);
 
-    // M.FEE logic: base + current w.e.f
     const feeSchedules = student.feeSchedules || [];
-    const baseFee = feeSchedules.length > 0? feeSchedules[0].monthlyFee : 0;
-    const currentFeeSch = feeSchedules.length > 0? feeSchedules[feeSchedules.length - 1] : null;
+    const baseFee = feeSchedules.length > 0 ? feeSchedules[0].monthlyFee : 0;
+    const currentFeeSch = feeSchedules.length > 0 ? feeSchedules[feeSchedules.length - 1] : null;
     const currentFee = currentFeeSch?.monthlyFee || baseFee;
     const wef = currentFeeSch?.effectiveFromMonth || 'Jun';
 
-    const changes = feeSchedules.slice(1); // Skip base fee (Jun)
+    const changes = feeSchedules.slice(1);
     const change1 = changes[0] || {}; const change2 = changes[1] || {}; const change3 = changes[2] || {};
 
     sheetData.push([
       sNo, student?.className || '', student?.rollNo || '', student?.studentName || '', student?.fatherName || '',
-      formatPhoneDisplay(student?.contactNo), student?.contactNo2? formatPhoneDisplay(student.contactNo2) : '',
+      formatPhoneDisplay(student?.contactNo), student?.contactNo2 ? formatPhoneDisplay(student.contactNo2) : '',
       baseFee, currentFee, wef, baseFee,
       (change1 as any).monthlyFee || '', (change1 as any).effectiveFromMonth || '',
       (change2 as any).monthlyFee || '', (change2 as any).effectiveFromMonth || '',
@@ -177,11 +172,11 @@ export function exportToCSV(
       return `${inv.status.toUpperCase()} (${inv.paidAmount})`;
     });
 
-    const sNo = student?.serialNo? formatSerialNo(student.serialNo) : formatSerialNo(student?.id || idx + 1, idx + 1);
+    const sNo = student?.serialNo ? formatSerialNo(student.serialNo) : formatSerialNo(student?.id || idx + 1, idx + 1);
     const feeSchedules = student.feeSchedules || [];
-    const baseFee = feeSchedules.length > 0? feeSchedules[0].monthlyFee : 0;
-    const currentFee = feeSchedules.length > 0? feeSchedules[feeSchedules.length - 1].monthlyFee : baseFee;
-    const wef = feeSchedules.length > 0? feeSchedules[feeSchedules.length - 1].effectiveFromMonth : 'Jun';
+    const baseFee = feeSchedules.length > 0 ? feeSchedules[0].monthlyFee : 0;
+    const currentFee = feeSchedules.length > 0 ? feeSchedules[feeSchedules.length - 1].monthlyFee : baseFee;
+    const wef = feeSchedules.length > 0 ? feeSchedules[feeSchedules.length - 1].effectiveFromMonth : 'Jun';
 
     return [
       `"=""${sNo}"""`, `"${student?.className || ''}"`, `"${student?.rollNo || ''}"`,
@@ -193,7 +188,7 @@ export function exportToCSV(
     ];
   });
 
-  const csvContent = '\uFEFF' + [headers.join(','),...rows.map(e => e.join(','))].join('\r\n');
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\r\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -201,6 +196,7 @@ export function exportToCSV(
   document.body.appendChild(link); link.click(); document.body.removeChild(link);
 }
 
+// FIXED: No more window.open popup - uses hidden iframe to bypass popup blocker
 export function printFeeLedger(
   students: StudentRecord[],
   title?: string,
@@ -209,12 +205,10 @@ export function printFeeLedger(
 ) {
   const actualTitle = title || `The Educational Centre - Fee Ledger ${activeYear}`;
   const currentMonthIndex = getCurrentAcademicMonthIndex();
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) { alert('Please allow popups to print.'); return; }
 
   const rowsHtml = (students || []).map((s, idx) => {
     const totals = calculateInvoiceTotals(s, invoicesMap, currentMonthIndex);
-    const sNo = s?.serialNo? formatSerialNo(s.serialNo) : formatSerialNo(s?.id || idx + 1, idx + 1);
+    const sNo = s?.serialNo ? formatSerialNo(s.serialNo) : formatSerialNo(s?.id || idx + 1, idx + 1);
 
     const getInvoice = (month: AcademicMonth): Invoice | undefined => {
       if (invoicesMap) return invoicesMap.get(`${s?.id}_${month}`);
@@ -229,10 +223,10 @@ export function printFeeLedger(
       <td style="border:1px solid #ddd;padding:6px;font-family:monospace;">${formatPhoneDisplay(s?.contactNo)}</td>
       <td style="border:1px solid #ddd;padding:6px;text-align:right;">${(() => {
         const fs = s.feeSchedules || [];
-        const base = fs.length > 0? fs[0].monthlyFee : 0;
-        const curr = fs.length > 0? fs[fs.length - 1].monthlyFee : base;
-        const wef = fs.length > 0? fs[fs.length - 1].effectiveFromMonth : 'Jun';
-        return `Rs. ${curr.toLocaleString()}<br><small style="color:blue;">w.e.f ${wef}</small>${base!== curr? `<br><small style="color:#888;">was ${base.toLocaleString()}</small>` : ''}`;
+        const base = fs.length > 0 ? fs[0].monthlyFee : 0;
+        const curr = fs.length > 0 ? fs[fs.length - 1].monthlyFee : base;
+        const wef = fs.length > 0 ? fs[fs.length - 1].effectiveFromMonth : 'Jun';
+        return `Rs. ${curr.toLocaleString()}<br><small style="color:blue;">w.e.f ${wef}</small>${base !== curr ? `<br><small style="color:#888;">was ${base.toLocaleString()}</small>` : ''}`;
       })()}</td>
       ${ACADEMIC_MONTHS.slice(0, currentMonthIndex + 1).map(m => {
         const inv = getInvoice(m as AcademicMonth);
@@ -240,31 +234,79 @@ export function printFeeLedger(
           return `<td style="border:1px solid #ddd;padding:6px;text-align:center;background:#000;color:#fff;font-weight:bold;font-size:9px;">NEW<br>ADMISSION</td>`;
         }
         const st: PaymentStatus = inv.status as PaymentStatus;
-        const color = st === 'paid'? '#198754' : st === 'partial'? '#fd7e14' : '#dc3545';
-        const bg = st === 'paid'? '#d1e7dd' : st === 'partial'? '#fff3cd' : '#f8d7da';
+        const color = st === 'paid' ? '#198754' : st === 'partial' ? '#fd7e14' : '#dc3545';
+        const bg = st === 'paid' ? '#d1e7dd' : st === 'partial' ? '#fff3cd' : '#f8d7da';
         return `<td style="border:1px solid #ddd;padding:6px;text-align:center;color:${color};background:${bg};font-weight:bold;font-size:10px;">${st.toUpperCase()}<br><small>Rs.${Number(inv.paidAmount).toLocaleString()}</small></td>`;
       }).join('')}
-      <td style="border:1px solid #ddd;padding:6px;text-align:right;font-weight:bold;color:${totals.totalOutstanding > 0? '#dc3545' : '#198754'};">Rs. ${totals.totalOutstanding.toLocaleString()}<br><small style="font-weight:normal;color:#666;">Coll: ${totals.totalCollected.toLocaleString()}</small></td>
+      <td style="border:1px solid #ddd;padding:6px;text-align:right;font-weight:bold;color:${totals.totalOutstanding > 0 ? '#dc3545' : '#198754'};">Rs. ${totals.totalOutstanding.toLocaleString()}<br><small style="font-weight:normal;color:#666;">Coll: ${totals.totalCollected.toLocaleString()}</small></td>
     </tr>`;
   }).join('');
 
-  printWindow.document.write(`
+  const htmlContent = `
     <!DOCTYPE html><html><head><title>${actualTitle}</title>
     <style>
       body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
-     .header { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 12px; }
-     .logo { height: 64px; width: 64px; object-fit: contain; }
+      .header { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 12px; }
+      .logo { height: 64px; width: 64px; object-fit: contain; }
       h2 { margin: 0; text-align: center; color: #1e1b4b; font-size: 20px; }
       p.motto { text-align: center; margin: 2px 0; font-size: 11px; font-weight: bold; color: #4338ca; text-transform: uppercase; }
       p.sub { text-align: center; margin-top: 4px; font-size: 12px; color: #666; }
       table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
       th { background: #1e1b4b; color: #fff; padding: 7px 4px; border: 1px solid #1e1b4b; }
-      @media print { @page { size: landscape; margin: 10mm; } }
+      @media print { @page { size: landscape; margin: 10mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
     </style></head><body>
     <div class="header"><img src="/school_logo.jpg" alt="Logo" class="logo" onerror="this.style.display='none'"/><div><h2>THE EDUCATIONAL CENTRE SECONDARY SCHOOL</h2><p class="motto">ENTER TO LEARN • GO FORTH TO SERVE</p><p class="sub">Fee Ledger Session: ${activeYear} • Printed: ${new Date().toLocaleDateString()} • Months: Jun to ${ACADEMIC_MONTHS[currentMonthIndex]}</p></div></div>
     <table><thead><tr><th>S#</th><th>Class</th><th>Student</th><th>Father</th><th>Contact</th><th>M. FEE</th>${ACADEMIC_MONTHS.slice(0, currentMonthIndex + 1).map(m => `<th>${m}</th>`).join('')}<th>Total Due</th></tr></thead><tbody>${rowsHtml}</tbody></table>
     </body></html>
-  `);
-  printWindow.document.close(); printWindow.focus();
-  setTimeout(() => printWindow.print(), 400);
+  `;
+
+  // FIXED: Use hidden iframe instead of window.open to avoid popup blocker
+  const existingIframe = document.getElementById('print-iframe');
+  if (existingIframe) existingIframe.remove();
+
+  const iframe = document.createElement('iframe');
+  iframe.id = 'print-iframe';
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.style.visibility = 'hidden';
+  document.body.appendChild(iframe);
+
+  const iframeDoc = iframe.contentWindow?.document;
+  if (!iframeDoc) {
+    alert('Print failed - browser blocked iframe');
+    return;
+  }
+
+  iframeDoc.open();
+  iframeDoc.write(htmlContent);
+  iframeDoc.close();
+
+  // Wait for images to load then print
+  iframe.onload = () => {
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (e) {
+        console.error('Print error', e);
+      }
+      // Cleanup after print dialog closes
+      setTimeout(() => {
+        const el = document.getElementById('print-iframe');
+        if (el) el.remove();
+      }, 2000);
+    }, 500);
+  };
+
+  // Fallback if onload doesn't fire (doc.write case)
+  setTimeout(() => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch {}
+  }, 800);
 }
