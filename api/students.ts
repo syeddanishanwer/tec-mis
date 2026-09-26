@@ -9,7 +9,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // GET - FIXED - Returns invoices + fee_schedules as single source of truth
+    // GET - Returns invoices + fee_schedules as single source of truth
     if (req.method === 'GET') {
       const { academicYear } = req.query;
       const year = (academicYear as string) || '2026-2027';
@@ -22,7 +22,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             (SELECT json_agg(json_build_object(
               'id', i.id, 'studentId', i.student_id, 'academicYear', i.academic_year,
               'month', i.month, 'baseFee', i.base_fee, 'concessionAmount', i.concession_amount,
-              'netDue', i.net_due, 'paidAmount', i.paid_amount, 'status', i.status
+              'netDue', i.net_due, 'paidAmount', i.paid_amount, 'status', i.status,
+              'isWaived', i.is_waived
             ) ORDER BY
               CASE i.month WHEN 'Jun' THEN 1 WHEN 'Jul' THEN 2 WHEN 'Aug' THEN 3 WHEN 'Sep' THEN 4
               WHEN 'Oct' THEN 5 WHEN 'Nov' THEN 6 WHEN 'Dec' THEN 7 WHEN 'Jan' THEN 8 WHEN 'Feb' THEN 9
@@ -64,7 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json(students);
     }
 
-    // POST - FIXED - No more data jsonb monthlyStatus, only minimal data + fee_schedules
+    // POST - No more data jsonb monthlyStatus, only minimal data + fee_schedules
     if (req.method === 'POST') {
       const { students } = req.body;
       if (!Array.isArray(students)) {

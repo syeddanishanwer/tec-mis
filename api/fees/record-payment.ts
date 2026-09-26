@@ -8,15 +8,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Unauthorized: Access Denied' });
   }
 
-  if (req.method!== 'POST') {
+  if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { studentId, month, academicYear, paidAmount } = req.body;
+    const { studentId, month, academicYear, paidAmount } = req.body || {};
 
     // Validation
-    if (!studentId ||!month ||!academicYear || paidAmount === undefined) {
+    if (!studentId || !month || !academicYear || paidAmount === undefined) {
       return res.status(400).json({
         error: 'Missing required fields: studentId, month, academicYear, paidAmount'
       });
@@ -27,9 +27,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'paidAmount must be a valid number >= 0' });
     }
 
-    // 1. Fetch current invoice to get net_due and check if it's new_admission
+    // 1. Fetch current invoice to check status, net_due, and is_waived flag
     const invoiceRes = await sql`
-      SELECT id, net_due, base_fee, status
+      SELECT id, net_due, base_fee, status, COALESCE(is_waived, false) AS is_waived
       FROM invoices
       WHERE student_id = ${Number(studentId)}
         AND month = ${month}
@@ -45,10 +45,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const currentInvoice = invoiceRes.rows[0];
 
-    // Prevent payment on NEW_ADMISSION months (admission hasn't happened yet)
+    // Prevent payment on NEW_ADMISSION months
     if (currentInvoice.status === 'new_admission') {
       return res.status(400).json({
         error: `Cannot record payment for ${month}: Student has NEW ADMISSION status (joined after this month)`
+      });
+    }
+
+    // WAIVER GUARD: Prevent recording payment on WAIVED months
+    if (currentInvoice.is_waived) {
+      return res.status(400).json({
+        error: `Cannot edit ${month}: This month is marked WAIVED. Remove the waiver first.`,
+        isWaived: true
       });
     }
 
@@ -76,7 +84,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         AND academic_year = ${academicYear}
       RETURNING
         id, student_id, academic_year, month, base_fee,
-        concession_amount, net_due, paid_amount, status;
+        concession_amount, net_due, paid_amount, status,
+        COALESCE(is_waived, false) AS is_waived;
     `;
 
     const updatedInvoice = updateRes.rows[0];
@@ -93,7 +102,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         concessionAmount: Number(updatedInvoice.concession_amount),
         netDue: Number(updatedInvoice.net_due),
         paidAmount: Number(updatedInvoice.paid_amount),
-        status: updatedInvoice.status
+        status: updatedInvoice.status,
+        isWaived: Boolean(updatedInvoice.is_waived)
       },
       message: `Payment updated: ${month} is now ${newStatus} (Rs. ${numericAmount})`
     });
@@ -102,7 +112,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('Record Payment Error:', error);
     return res.status(500).json({
       error: error.message || 'Internal Server Error',
-      details: process.env.NODE_ENV === 'development'? error.stack : undefined
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }

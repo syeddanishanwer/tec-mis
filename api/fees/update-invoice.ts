@@ -19,9 +19,9 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Missing studentId, academicYear, month, or baseFee' });
     }
 
-    // FIXED: Block NEW ADMISSION invoices
+    // Block edits to NEW ADMISSION or WAIVED invoices
     const { rows: existingRows } = await sql`
-      SELECT status, month FROM invoices
+      SELECT status, month, is_waived FROM invoices
       WHERE student_id = ${studentId} AND academic_year = ${academicYear} AND month = ${month}
       LIMIT 1;
     `;
@@ -30,6 +30,13 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({
         error: `Cannot edit ${month}: This month is marked as NEW ADMISSION (before student joined). Create a fee schedule instead.`,
         status: 'new_admission'
+      });
+    }
+
+    if (existingRows.length > 0 && existingRows[0].is_waived) {
+      return res.status(400).json({
+        error: `Cannot edit ${month}: This month is marked WAIVED. Remove the waiver first, then edit the amount.`,
+        isWaived: true
       });
     }
 
