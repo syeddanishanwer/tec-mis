@@ -83,7 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const insertRes = await sql`
           INSERT INTO students (serial_no, roll_no, student_name, father_name, class_name, contact_no, contact_no_2, academic_year, admission_date, data)
           VALUES (${student.serialNo ?? null}, ${student.rollNo}, ${student.studentName}, ${student.fatherName}, ${student.className}, ${student.contactNo ?? null}, ${student.contactNo2 ?? null}, ${student.academicYear || '2026-2027'}, ${student.admissionDate ?? null}, ${JSON.stringify(minimalData)}::jsonb)
-          ON CONFLICT (roll_no) DO UPDATE SET
+          ON CONFLICT (roll_no, academic_year) DO UPDATE SET
             serial_no = EXCLUDED.serial_no,
             student_name = EXCLUDED.student_name,
             father_name = EXCLUDED.father_name,
