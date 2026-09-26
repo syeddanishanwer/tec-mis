@@ -370,6 +370,7 @@ export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYe
     contactNo: row.contactNo,
     contactNo2: row.contactNo2,
     monthlyFee: row.monthlyFee,
+    discount: row.discount, 
     academicYear,
     admissionDate: row.admissionDate,
     admissionMonth: row.admissionMonth,
