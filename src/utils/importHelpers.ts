@@ -368,20 +368,20 @@ export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYe
   ];
 
   return {
-  serialNo: row.serialNo,
-  rollNo: row.rollNo,
-  studentName: row.studentName,
-  fatherName: row.fatherName,
-  className: row.className,
-  contactNo: row.contactNo,
-  contactNo2: row.contactNo2 || null,
-  monthlyFee: Number(row.monthlyFee) || 0,
-  academicYear,
-  admissionDate: row.admissionDate,
-  admissionMonth: row.admissionMonth,
-  feeChanges: row.feeChanges,   // ← ADD THIS LINE
-  feeSchedules,
-  invoices,
+    serialNo: row.serialNo,
+    rollNo: row.rollNo,
+    studentName: row.studentName,
+    fatherName: row.fatherName,
+    className: row.className,
+    contactNo: row.contactNo,
+    contactNo2: row.contactNo2 || null,
+    monthlyFee: Number(row.monthlyFee) || 0,
+    academicYear,
+    admissionDate: row.admissionDate,
+    admissionMonth: row.admissionMonth,
+    feeChanges: row.feeChanges,   // ← ADD THIS LINE
+    feeSchedules,
+    invoices,
   };
 }
 
