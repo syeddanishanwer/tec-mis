@@ -379,6 +379,7 @@ export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYe
     academicYear,
     admissionDate: row.admissionDate,
     admissionMonth: row.admissionMonth,
+    feeChanges: row.feeChanges,   // ← ADD THIS LINE
     feeSchedules,
     invoices,
   };
