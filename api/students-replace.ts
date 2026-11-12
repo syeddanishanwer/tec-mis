@@ -19,7 +19,6 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    // FIXED: Ensure status enum allows new_admission
     await sql`BEGIN`;
 
     // Allow new_admission status - run once, safe if already exists
@@ -81,10 +80,13 @@ export default async function handler(req: any, res: any) {
         `;
       }
 
+      // Must follow the same rules as the schedule inserts above:
+      // a "Jun" fee change is ignored, the base fee already covers Jun.
       const feeForMonth = (month: string): number => {
         const monthIdx = ACADEMIC_MONTHS.indexOf(month as AcademicMonth);
         let activeFee = baseFee;
         for (const change of feeChanges) {
+          if (change.effectiveFromMonth === 'Jun') continue;
           if (ACADEMIC_MONTHS.indexOf(change.effectiveFromMonth) <= monthIdx) {
             activeFee = Number(change.newFee);
           }
@@ -99,26 +101,37 @@ export default async function handler(req: any, res: any) {
         const concession = Number(student.discount || 0);
 
         if (isBeforeAdmission) {
-          // FIXED: Store expectedFee as base_fee for reference, but net_due=0, status=new_admission
+          // Store expectedFee as base_fee for reference, but net_due=0, status=new_admission
           await sql`
-            INSERT INTO invoices (student_id, academic_year, month, base_fee, concession_amount, net_due, paid_amount, status)
-            VALUES (${studentId}, ${academicYear}, ${month}, ${expectedFee}, 0, 0, 0, 'new_admission');
+            INSERT INTO invoices (student_id, academic_year, month, base_fee, concession_amount, net_due, paid_amount, status, is_waived)
+            VALUES (${studentId}, ${academicYear}, ${month}, ${expectedFee}, 0, 0, 0, 'new_admission', false);
           `;
         } else {
-          const paidAmt = Number(
-            student.monthlyAmountsPaid?.[month] ??
-            student.monthlyAmounts?.[month] ??
-            student.invoices?.find((i: any) => i.month === month)?.paidAmount ??
-            0
-          );
-          const netDue = Math.max(0, expectedFee - concession);
+          const srcInvoice = student.invoices?.find((i: any) => i.month === month);
+
+          // WAIVED: same stored shape as the ledger's toggleWaived action
+          // (is_waived = true, net_due = 0, nothing paid, status left as 'unpaid')
+          const isWaived = Boolean(srcInvoice?.isWaived);
+
+          const paidAmt = isWaived
+            ? 0
+            : Number(
+                student.monthlyAmountsPaid?.[month] ??
+                student.monthlyAmounts?.[month] ??
+                srcInvoice?.paidAmount ??
+                0
+              );
+          const netDue = isWaived ? 0 : Math.max(0, expectedFee - concession);
+
           let status: string = 'unpaid';
-          if (paidAmt >= netDue && netDue > 0) status = 'paid';
-          else if (paidAmt > 0) status = 'partial';
+          if (!isWaived) {
+            if (paidAmt >= netDue && netDue > 0) status = 'paid';
+            else if (paidAmt > 0) status = 'partial';
+          }
 
           await sql`
-            INSERT INTO invoices (student_id, academic_year, month, base_fee, concession_amount, net_due, paid_amount, status)
-            VALUES (${studentId}, ${academicYear}, ${month}, ${expectedFee}, ${concession}, ${netDue}, ${paidAmt}, ${status});
+            INSERT INTO invoices (student_id, academic_year, month, base_fee, concession_amount, net_due, paid_amount, status, is_waived)
+            VALUES (${studentId}, ${academicYear}, ${month}, ${expectedFee}, ${concession}, ${netDue}, ${paidAmt}, ${status}, ${isWaived});
           `;
         }
       }

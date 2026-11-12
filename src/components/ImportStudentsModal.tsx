@@ -183,6 +183,13 @@ export const ImportStudentsModal: React.FC<Props> = ({
                         {ACADEMIC_MONTHS.map(m => {
                           const amt = row.monthlyAmounts[m] || 0;
                           const status = row.monthlyStatuses[m];
+                          if (row.monthlyWaived?.[m]) {
+                            return (
+                              <td key={m} className="py-1.5 px-1 text-center whitespace-nowrap">
+                                <div className="px-1.5 py-0.5 rounded font-bold border bg-neutral-200 text-neutral-600">WAIVED</div>
+                              </td>
+                            );
+                          }
                           if (status === 'new_admission') {
                             return <td key={m} className="py-1.5 px-1 text-center whitespace-nowrap"><div className="px-1.5 py-0.5 rounded text- font-bold border bg-black text-white">NEW ADMISSION</div></td>;
                           }

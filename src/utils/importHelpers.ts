@@ -36,6 +36,7 @@ export interface ParsedImportRow {
   feeChanges: FeeChange[];
   monthlyAmounts: Record<AcademicMonth, number>;
   monthlyStatuses: Record<AcademicMonth, PaymentStatus>;
+  monthlyWaived: Record<AcademicMonth, boolean>;
   admissionMonth: AcademicMonth;
   admissionDate: string;
   isValid: boolean;
@@ -50,6 +51,10 @@ export interface ImportParseResult {
   invalidRows: ParsedImportRow[];
   warnings: string[];
 }
+
+// Accepts Waived, Wavied (common typo), Waive, Waiver - case and punctuation insensitive
+const isWaivedText = (upper: string) =>
+  /^WA[IV]{1,2}(E|ED|ER)?$/.test(upper.replace(/[^A-Z]/g, ''));
 
 export function normalizeClassName(rawClass: any): SchoolClass {
   if (!rawClass) return 'Class I';
@@ -124,6 +129,14 @@ function parseFeeChangeSlot(
     errors.push(`Fee Change Slot ${slotNumber}: "${monthStr}" is not a valid academic month.`);
     return null;
   }
+
+  // A fee change effective Jun is really the base fee. Ignoring it keeps the schedule
+  // and the invoices consistent (this mismatch caused the wrong 4,500 invoices).
+  if (matchedMonth === 'Jun') {
+    warnings.push(`Fee Change Slot ${slotNumber}: Jun change ignored. Put the Jun fee in "Monthly Fee".`);
+    return null;
+  }
+
   return { newFee: roundedFee, effectiveFromMonth: matchedMonth };
 }
 
@@ -198,6 +211,8 @@ export async function parseExcelOrCsvFile(
     const candidates = monthMap[m];
     for (let c = 0; c < headerLower.length; c++) {
       const ht = headerLower[c].trim();
+      // Skip "Jun Status" style columns so the "Jun Paid" amount column is used instead
+      if (ht.includes('status')) continue;
       if (candidates.some((p) => ht === p || ht.startsWith(p))) { monthCols[m] = c; break; }
     }
   });
@@ -252,6 +267,8 @@ export async function parseExcelOrCsvFile(
 
     const monthlyAmounts: Record<AcademicMonth, number> = { Jun: 0, Jul: 0, Aug: 0, Sep: 0, Oct: 0, Nov: 0, Dec: 0, Jan: 0, Feb: 0, Mar: 0, Apr: 0, May: 0 };
     const monthlyStatuses: Record<AcademicMonth, PaymentStatus> = { Jun: 'unpaid', Jul: 'unpaid', Aug: 'unpaid', Sep: 'unpaid', Oct: 'unpaid', Nov: 'unpaid', Dec: 'unpaid', Jan: 'unpaid', Feb: 'unpaid', Mar: 'unpaid', Apr: 'unpaid', May: 'unpaid' };
+    const monthlyWaived = {} as Record<AcademicMonth, boolean>;
+    ACADEMIC_MONTHS.forEach((m) => (monthlyWaived[m] = false));
 
     ACADEMIC_MONTHS.forEach((m) => {
       const colIdx = monthCols[m];
@@ -262,6 +279,12 @@ export async function parseExcelOrCsvFile(
         if (upper.includes('NEW') && upper.includes('ADMISSION')) {
           monthlyStatuses[m] = 'new_admission';
           monthlyAmounts[m] = 0;
+          return;
+        }
+        if (isWaivedText(upper)) {
+          monthlyWaived[m] = true;
+          monthlyAmounts[m] = 0;
+          monthlyStatuses[m] = 'unpaid';
           return;
         }
         if (typeof row[colIdx] === 'number') {
@@ -289,13 +312,16 @@ export async function parseExcelOrCsvFile(
       }
     });
 
+    // A waived month counts as a real billed month, so it never gets turned into NEW ADMISSION
     let admissionIdx = 0;
     for (let i = 0; i < ACADEMIC_MONTHS.length; i++) {
       const m = ACADEMIC_MONTHS[i];
       const status = monthlyStatuses[m];
+
+      
       if (status === 'new_admission') {
         admissionIdx = i + 1;
-      } else if (monthlyAmounts[m] > 0 || i === 0) {
+      } else if (monthlyAmounts[m] > 0 || monthlyWaived[m] || i === 0) {
         admissionIdx = i;
         break;
       }
@@ -305,6 +331,7 @@ export async function parseExcelOrCsvFile(
       const m = ACADEMIC_MONTHS[i];
       monthlyStatuses[m] = 'new_admission';
       monthlyAmounts[m] = 0;
+      monthlyWaived[m] = false;
     }
 
     const admissionMonth = ACADEMIC_MONTHS[admissionIdx] || 'Jun';
@@ -317,7 +344,7 @@ export async function parseExcelOrCsvFile(
     const parsedRow: ParsedImportRow = {
       rowNumber, serialNo, className, rollNo, studentName, fatherName,
       contactNo, contactNo2, monthlyFee, discount: 0, feeChanges,
-      monthlyAmounts, monthlyStatuses, admissionMonth, admissionDate,
+      monthlyAmounts, monthlyStatuses, monthlyWaived, admissionMonth, admissionDate,
       isValid: errors.length === 0, warnings, errors,
     };
 
@@ -331,6 +358,7 @@ export async function parseExcelOrCsvFile(
 export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYear: string = '2026-2027'): any {
   const invoices = ACADEMIC_MONTHS.map(month => {
     const status = row.monthlyStatuses[month] || 'unpaid';
+    const isWaived = !!row.monthlyWaived?.[month];
     const paidAmount = Number(row.monthlyAmounts[month]) || 0;
 
     let expectedFee = Number(row.monthlyFee) || 0;
@@ -345,16 +373,15 @@ export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYe
       academicYear,
       baseFee: expectedFee,
       concessionAmount: 0,
-      netDue: status === 'new_admission' ? 0 : expectedFee,
-      paidAmount: status === 'new_admission' ? 0 : paidAmount,
+      netDue: status === 'new_admission' || isWaived ? 0 : expectedFee,
+      paidAmount: status === 'new_admission' || isWaived ? 0 : paidAmount,
       status,
-      isWaived: false,
-      monthlyAmountsPaid: row.monthlyAmounts, // <-- ADD THIS
-      monthlyAmounts: row.monthlyAmounts, // <-- ADD THIS
+      isWaived,
+      monthlyAmountsPaid: row.monthlyAmounts,
+      monthlyAmounts: row.monthlyAmounts,
       monthlyStatuses: row.monthlyStatuses,
       feeChanges: row.feeChanges,
       discount: row.discount || 0,
-
     };
   });
 
@@ -379,7 +406,7 @@ export function convertParsedRowToStudentRecord(row: ParsedImportRow, academicYe
     academicYear,
     admissionDate: row.admissionDate,
     admissionMonth: row.admissionMonth,
-    feeChanges: row.feeChanges,   // ← ADD THIS LINE
+    feeChanges: row.feeChanges,
     feeSchedules,
     invoices,
   };

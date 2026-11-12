@@ -113,15 +113,18 @@
           `;
           const concession = existingInvoice.length > 0? Number(existingInvoice[0].concession_amount) : 0;
           const netDue = Math.max(0, baseFee - concession);
-
-          const result = await sql`
+         const result = await sql`
             INSERT INTO invoices (student_id, academic_year, month, base_fee, concession_amount, net_due, paid_amount, status)
             VALUES (${student.id}, ${academicYear}, ${targetMonth}, ${baseFee}, ${concession}, ${netDue}, 0, 'unpaid')
             ON CONFLICT (student_id, academic_year, month) DO UPDATE SET
               base_fee = EXCLUDED.base_fee,
-              net_due = GREATEST(0, EXCLUDED.base_fee - invoices.concession_amount),
+              net_due = CASE
+                WHEN invoices.is_waived THEN 0
+                ELSE GREATEST(0, EXCLUDED.base_fee - invoices.concession_amount)
+              END,
               status = CASE
                 WHEN invoices.status = 'new_admission' THEN 'new_admission'
+                WHEN invoices.is_waived THEN invoices.status
                 WHEN invoices.paid_amount >= GREATEST(0, EXCLUDED.base_fee - invoices.concession_amount) AND GREATEST(0, EXCLUDED.base_fee - invoices.concession_amount) > 0 THEN 'paid'
                 WHEN invoices.paid_amount > 0 THEN 'partial'
                 ELSE 'unpaid'
