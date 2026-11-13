@@ -121,8 +121,7 @@ export const ImportStudentsModal: React.FC<Props> = ({
             <div className="p-2 bg-neutral-800 rounded-lg"><FileSpreadsheet className="w-5 h-5 text-emerald-400" /></div>
             <div>
               <h3 className="font-bold text-base leading-tight">Import Student Fee Ledger</h3>
-              <p className="text-xs text-neutral-400">Excel (.xlsx,.xls) or CSV with NEW ADMISSION support</p>
-            </div>
+              <p className="text-xs text-neutral-400">Excel (.xlsx,.xls) or CSV with NEW ADMISSION support • build 13Nov-A</p>            </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={downloadSampleImportTemplate} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5 text-emerald-400" />Download Template</button>
